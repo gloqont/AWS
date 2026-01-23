@@ -28,7 +28,10 @@ export default function PortfolioOptimizerPage() {
   // Start the portfolio optimizer tutorial when the page loads with tutorial param and no tutorial is active
   useEffect(() => {
     const tutorialParam = searchParams.get('tutorial');
-    if (tutorialParam === 'portfolio' || !tutorialParam && !isTutorialActive) {
+    const hasCompletedTutorial = localStorage.getItem('hasCompletedTutorial');
+    const shouldStartTutorial =
+      !isTutorialActive && (tutorialParam === 'portfolio' || (!tutorialParam && !hasCompletedTutorial));
+    if (shouldStartTutorial) {
       // If no tutorial param is present, it means this is the first page in the sequence
       const timer = setTimeout(() => {
         startTutorial(PORTFOLIO_OPTIMIZER_TUTORIAL);
