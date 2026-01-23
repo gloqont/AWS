@@ -1,0 +1,342 @@
+{
+  "items": [
+    {
+      "id": "dec_f994f40b9742",
+      "decision_text": "buy AAPL 5%",
+      "tax_country": "India",
+      "portfolio_id": "prt_e95eb71ae505",
+      "portfolio_value": 4865.4,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-16T08:13:49Z"
+    },
+    {
+      "id": "dec_726709705952",
+      "decision_text": "buy AAPL 5%",
+      "tax_country": "Europe (Generic)",
+      "portfolio_id": "prt_e95eb71ae505",
+      "portfolio_value": 4865.4,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-16T08:13:46Z"
+    },
+    {
+      "id": "dec_8800eb8c1376",
+      "decision_text": "buy AAPL 5%",
+      "tax_country": "United States",
+      "portfolio_id": "prt_777be0f07454",
+      "portfolio_value": 4865.4,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-16T06:37:47Z"
+    },
+    {
+      "id": "dec_ca49b415065b",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "United States",
+      "portfolio_id": "prt_8dca7d5fa668",
+      "portfolio_value": 133367.9247,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -4.720000000000001,
+      "best_case_pct": 5.359999999999999,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-12T17:25:07Z"
+    },
+    {
+      "id": "dec_8bb0828095c7",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "India",
+      "portfolio_id": "prt_7f645140864a",
+      "portfolio_value": 4990.099999999999,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -4.720000000000001,
+      "best_case_pct": 5.359999999999999,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-12T13:51:24Z"
+    },
+    {
+      "id": "dec_b5707f38c02a",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "Other",
+      "portfolio_id": "prt_85b42026cd69",
+      "portfolio_value": 183404.83000000002,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -7.44,
+      "best_case_pct": 7.68,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-11T13:20:15Z"
+    },
+    {
+      "id": "dec_a5d95de74497",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "India",
+      "portfolio_id": "prt_85b42026cd69",
+      "portfolio_value": 183404.83000000002,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -7.44,
+      "best_case_pct": 7.68,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-11T13:20:12Z"
+    },
+    {
+      "id": "dec_922e4cce191e",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "United States",
+      "portfolio_id": "prt_7cf452b0bd5a",
+      "portfolio_value": 81687.4,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -7.44,
+      "best_case_pct": 7.68,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-11T13:16:17Z"
+    },
+    {
+      "id": "dec_809b22f72d45",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "Europe (Generic)",
+      "portfolio_id": "prt_7cf452b0bd5a",
+      "portfolio_value": 81687.4,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -7.44,
+      "best_case_pct": 7.68,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-11T13:16:13Z"
+    },
+    {
+      "id": "dec_48d67a2bc2a0",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "India",
+      "portfolio_id": "prt_a65c573f608d",
+      "portfolio_value": 4990100.0,
+      "expected_before_tax_pct": 0.7200000000000001,
+      "worst_case_pct": -7.44,
+      "best_case_pct": 7.68,
+      "confidence": "HIGH",
+      "notes": [
+        "Hedge keyword detected: expected return may decrease while drawdowns reduce."
+      ],
+      "created_at": "2026-01-11T11:32:38Z"
+    },
+    {
+      "id": "dec_541ebbd37612",
+      "decision_text": "Hedge my portfolio against market downturns using puts",
+      "tax_country": "United States",
+      "portfolio_id": "prt_8a2c78ed2869",
+      "portfolio_value": 4990.099999999999,
+      "decision_type": "hedging",
+      "risk_profile": {
+        "risk_level": "LOW",
+        "complexity_level": "HIGH",
+        "time_horizon_implications": "MONITOR_HEDGE_EXPIRATION",
+        "liquidity_considerations": [],
+        "concentration_warnings": [],
+        "leverage_alerts": []
+      },
+      "classification_confidence": 0.75,
+      "created_at": "2026-01-11T10:17:14.645102"
+    },
+    {
+      "id": "dec_ea69d778c2b7",
+      "decision_text": "Consider buying more technology stocks for long-term growth",
+      "tax_country": "United States",
+      "portfolio_id": "prt_8a2c78ed2869",
+      "portfolio_value": 4990.099999999999,
+      "decision_type": "position_opening",
+      "risk_profile": {
+        "risk_level": "MODERATE",
+        "complexity_level": "LOW",
+        "time_horizon_implications": "ALIGN_WITH_INVESTMENT_OBJECTIVES",
+        "liquidity_considerations": [],
+        "concentration_warnings": [],
+        "leverage_alerts": []
+      },
+      "classification_confidence": 0.4,
+      "created_at": "2026-01-11T10:17:02.883713"
+    },
+    {
+      "id": "dec_bc00ceecdf6d",
+      "decision_text": "buy",
+      "tax_country": "India",
+      "portfolio_id": "prt_53b6f81834a1",
+      "portfolio_value": 49901.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -7.6000000000000005,
+      "best_case_pct": 7.999999999999999,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T19:22:17Z"
+    },
+    {
+      "id": "dec_5f89fe1e3489",
+      "decision_text": "buy",
+      "tax_country": "Europe (Generic)",
+      "portfolio_id": "prt_797881bb5191",
+      "portfolio_value": 4990.099999999999,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T19:11:08Z"
+    },
+    {
+      "id": "dec_5807baf93b53",
+      "decision_text": "buy",
+      "tax_country": "Other",
+      "portfolio_id": "prt_797881bb5191",
+      "portfolio_value": 4990.099999999999,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T19:11:05Z"
+    },
+    {
+      "id": "dec_be840b4533f3",
+      "decision_text": "buy",
+      "tax_country": "United States",
+      "portfolio_id": "prt_797881bb5191",
+      "portfolio_value": 4990.099999999999,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T19:11:03Z"
+    },
+    {
+      "id": "dec_75b9620e4e6c",
+      "decision_text": "buy",
+      "tax_country": "India",
+      "portfolio_id": "prt_797881bb5191",
+      "portfolio_value": 4990.099999999999,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T19:11:00Z"
+    },
+    {
+      "id": "dec_5849d9c27971",
+      "decision_text": "buy",
+      "tax_country": "United States",
+      "portfolio_id": "prt_e2d8d85ae6c5",
+      "portfolio_value": 25000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T17:44:38Z"
+    },
+    {
+      "id": "dec_01dd16dd2221",
+      "decision_text": "Buy TATASTEEL 5%",
+      "tax_country": "India",
+      "portfolio_id": "prt_e2d8d85ae6c5",
+      "portfolio_value": 25000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-10T17:42:13Z"
+    },
+    {
+      "id": "dec_ef78d4ff4c1d",
+      "decision_text": "Add leverage and buy calls on NVDA",
+      "tax_country": "United States",
+      "portfolio_id": "prt_72ccadc4f2a0",
+      "portfolio_value": 100000.0,
+      "expected_before_tax_pct": 2.0,
+      "worst_case_pct": -6.0,
+      "best_case_pct": 9.2,
+      "confidence": "LOW",
+      "notes": [
+        "Low confidence: decision text implies high leverage/risk or is too broad."
+      ],
+      "created_at": "2026-01-07T20:16:28Z"
+    },
+    {
+      "id": "dec_a83ff73d1aaa",
+      "decision_text": "increase AAPL by 10% and add some hedging",
+      "tax_country": "United States",
+      "portfolio_id": "prt_c34ed2b3d3a1",
+      "portfolio_value": 100000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-07T19:40:45Z"
+    },
+    {
+      "id": "dec_ad05d5f4fa4b",
+      "decision_text": "Increase AAPL by 10% and add some hedging",
+      "tax_country": "United States",
+      "portfolio_id": "prt_e2c29c4c634f",
+      "portfolio_value": 20000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-07T19:32:47Z"
+    },
+    {
+      "id": "dec_5bd9e22a1c12",
+      "decision_text": "Increase AAPL by 10% and add some hedging",
+      "tax_country": "United States",
+      "portfolio_id": "prt_e66b6c030902",
+      "portfolio_value": 20000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-07T19:31:47Z"
+    },
+    {
+      "id": "dec_26e85dade6c0",
+      "decision_text": "Increase AAPL by 10% and add some hedging",
+      "tax_country": "United States",
+      "portfolio_id": "prt_e66b6c030902",
+      "portfolio_value": 20000.0,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-07T19:06:29Z"
+    }
+  ]
+}

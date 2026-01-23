@@ -1,0 +1,33 @@
+{
+  "default_country": "United States",
+  "rules": {
+    "United States": {
+      "long_term_capital_gains": 0.15,
+      "short_term_capital_gains": 0.30,
+      "crypto": 0.30,
+      "transaction_tax": 0.00,
+      "fx_drag": 0.005
+    },
+    "India": {
+      "long_term_capital_gains": 0.10,
+      "short_term_capital_gains": 0.15,
+      "crypto": 0.30,
+      "transaction_tax": 0.001,
+      "fx_drag": 0.01
+    },
+    "United Kingdom": {
+      "long_term_capital_gains": 0.20,
+      "short_term_capital_gains": 0.20,
+      "crypto": 0.20,
+      "transaction_tax": 0.005,
+      "fx_drag": 0.008
+    },
+    "Europe (Generic)": {
+      "long_term_capital_gains": 0.25,
+      "short_term_capital_gains": 0.25,
+      "crypto": 0.25,
+      "transaction_tax": 0.002,
+      "fx_drag": 0.01
+    }
+  }
+}

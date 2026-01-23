@@ -1,0 +1,16 @@
+{
+  "profiles": {
+    "admin": {
+      "answers": {
+        "q1": "I manage portfolios professionally",
+        "q2": "Frequently / as part of my work",
+        "q3": "I want tools to justify and document decisions",
+        "q4": "$1M+",
+        "q5": "Very comfortable"
+      },
+      "skipped": false,
+      "level": "Expert",
+      "updated_at": "2026-01-11T11:25:32Z"
+    }
+  }
+}

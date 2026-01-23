@@ -1,0 +1,10 @@
+INFO:     Started server process [101542]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Failed to get ticker '^GSPC' reason: Expecting value: line 1 column 1 (char 0)
+[*********************100%%**********************]  1 of 1 completed
+
+1 Failed download:
+['^GSPC']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+INFO:     127.0.0.1:60634 - "POST /api/v1/quantitative-analysis HTTP/1.1" 200 OK
