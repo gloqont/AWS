@@ -2,9 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { useTutorial } from "@/components/tutorial/TutorialContext";
-import { TAX_ADVISOR_TUTORIAL } from "@/components/tutorial/tutorialContent";
-import { useSearchParams } from "next/navigation";
 
 type AdviceItem = {
   title: string;
@@ -51,7 +48,6 @@ function fmtMoney(n: number) {
 }
 
 export default function TaxAdvisorPage() {
-  const searchParams = useSearchParams();
   const [country, setCountry] = useState("United States");
   const [portfolio, setPortfolio] = useState<PortfolioCurrent["portfolio"]>(null);
   const [decision, setDecision] = useState<DecisionLast["decision"]>(null);
@@ -59,20 +55,6 @@ export default function TaxAdvisorPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [advice, setAdvice] = useState<AdviceResponse | null>(null);
-
-  const { startTutorial, isTutorialActive } = useTutorial();
-
-  // Start the tax advisor tutorial when the page loads with tutorial param and no tutorial is active
-  useEffect(() => {
-    const tutorialParam = searchParams.get('tutorial');
-    if (tutorialParam === 'tax-advisor' && !isTutorialActive) {
-      const timer = setTimeout(() => {
-        startTutorial(TAX_ADVISOR_TUTORIAL);
-      }, 500); // Small delay to ensure DOM is ready
-
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams, startTutorial, isTutorialActive]);
 
   useEffect(() => {
     (async () => {

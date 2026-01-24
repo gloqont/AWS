@@ -2,9 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { useTutorial } from "@/components/tutorial/TutorialContext";
-import { TAX_IMPACT_TUTORIAL } from "@/components/tutorial/tutorialContent";
-import { useSearchParams } from "next/navigation";
 
 type TaxCountry = "United States" | "India" | "United Kingdom" | "Europe (Generic)" | "Other";
 
@@ -83,7 +80,6 @@ function fmtMoney(n: number) {
 }
 
 export default function TaxImpactPage() {
-  const searchParams = useSearchParams();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
 
@@ -92,20 +88,6 @@ export default function TaxImpactPage() {
   const [loading, setLoading] = useState(true);
   const [countrySaving, setCountrySaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const { startTutorial, isTutorialActive } = useTutorial();
-
-  // Start the tax impact tutorial when the page loads with tutorial param and no tutorial is active
-  useEffect(() => {
-    const tutorialParam = searchParams.get('tutorial');
-    if (tutorialParam === 'tax-impact' && !isTutorialActive) {
-      const timer = setTimeout(() => {
-        startTutorial(TAX_IMPACT_TUTORIAL);
-      }, 500); // Small delay to ensure DOM is ready
-
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams, startTutorial, isTutorialActive]);
 
   // Load portfolio + last decision from backend
   useEffect(() => {

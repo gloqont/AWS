@@ -3,9 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { DecisionVisualizations } from "@/components/DecisionVisualizations";
-import { useTutorial } from "@/components/tutorial/TutorialContext";
-import { SCENARIO_SIMULATION_TUTORIAL } from "@/components/tutorial/tutorialContent";
-import { useSearchParams } from "next/navigation";
 
 type Portfolio = {
   id: string;
@@ -45,7 +42,6 @@ function fmtPct(n: number) {
 }
 
 export default function ScenarioSimulationPage() {
-  const searchParams = useSearchParams();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [decisionText, setDecisionText] = useState("");
   const [taxCountry, setTaxCountry] = useState("United States");
@@ -57,20 +53,6 @@ export default function ScenarioSimulationPage() {
   const [showOnlyVisualizations, setShowOnlyVisualizations] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const { startTutorial, isTutorialActive } = useTutorial();
-
-  // Start the scenario simulation tutorial when the page loads with tutorial param and no tutorial is active
-  useEffect(() => {
-    const tutorialParam = searchParams.get('tutorial');
-    if (tutorialParam === 'scenario' && !isTutorialActive) {
-      const timer = setTimeout(() => {
-        startTutorial(SCENARIO_SIMULATION_TUTORIAL);
-      }, 500); // Small delay to ensure DOM is ready
-
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams, startTutorial, isTutorialActive]);
 
   // Helper function to extract tickers from decision text
   function extractTickersFromText(text: string): string[] {

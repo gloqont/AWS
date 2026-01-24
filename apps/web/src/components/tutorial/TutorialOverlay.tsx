@@ -2,40 +2,14 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTutorial } from './TutorialContext';
-import { useRouter, usePathname } from 'next/navigation';
-import {
-  FIRST_TIME_TUTORIAL_STEPS,
-  PORTFOLIO_OPTIMIZER_TUTORIAL,
-  TAX_ADVISOR_TUTORIAL,
-  SCENARIO_SIMULATION_TUTORIAL,
-  TAX_IMPACT_TUTORIAL
-} from './tutorialContent';
 
 interface TutorialOverlayProps {
   children: React.ReactNode;
 }
 
 const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
-  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial, startTutorial } = useTutorial();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial } = useTutorial();
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [currentPage, setCurrentPage] = useState('');
-
-  // Determine current page from pathname
-  useEffect(() => {
-    if (pathname.includes('/portfolio-optimizer')) {
-      setCurrentPage('portfolio-optimizer');
-    } else if (pathname.includes('/scenario-simulation')) {
-      setCurrentPage('scenario-simulation');
-    } else if (pathname.includes('/tax-advisor')) {
-      setCurrentPage('tax-advisor');
-    } else if (pathname.includes('/tax-impact')) {
-      setCurrentPage('tax-impact');
-    } else {
-      setCurrentPage('');
-    }
-  }, [pathname]);
 
   // Calculate the position and dimensions of the highlighted element
   useEffect(() => {
@@ -149,9 +123,8 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
   return (
     <>
       {children}
-      {/* Overlay to dim the rest of the screen */}
       <div
-        className="fixed inset-0 bg-black/70 z-50 pointer-events-auto"
+        className="fixed inset-0 z-50"
         style={{ zIndex: 9997 }}
         onClick={endTutorial}
       />
@@ -183,14 +156,26 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
           overflowY: 'auto',
           backdropFilter: 'blur(10px)'
         }}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4">
-          <h3 className="text-xl font-bold text-blue-700 flex items-center gap-2">
-            <span className="bg-blue-100 text-blue-700 rounded-full w-6 h-6 flex items-center justify-center text-sm">
-              {currentStep + 1}
-            </span>
-            {tutorialState?.currentStepData.title}
-          </h3>
+          <div className="flex items-start justify-between gap-4">
+            <h3 className="text-xl font-bold text-blue-700 flex items-center gap-2">
+              <span className="bg-blue-100 text-blue-700 rounded-full w-6 h-6 flex items-center justify-center text-sm">
+                {currentStep + 1}
+              </span>
+              {tutorialState?.currentStepData.title}
+            </h3>
+            <button
+              type="button"
+              onClick={endTutorial}
+              className="text-gray-500 hover:text-gray-700 text-lg leading-none"
+              aria-label="Close tutorial"
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
         </div>
         <p className="text-gray-700 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
 

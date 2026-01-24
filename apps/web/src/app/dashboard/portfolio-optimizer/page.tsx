@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useTutorial } from "@/components/tutorial/TutorialContext";
 import { PORTFOLIO_OPTIMIZER_TUTORIAL } from "@/components/tutorial/tutorialContent";
-import { useSearchParams } from "next/navigation";
 
 type RiskBudget = "LOW" | "MEDIUM" | "HIGH";
 type Row = { ticker: string; quantity: string; price?: number };
@@ -15,7 +14,6 @@ function toNumber(s: string) {
 }
 
 export default function PortfolioOptimizerPage() {
-  const searchParams = useSearchParams();
   const [name, setName] = useState("My Portfolio");
   const [riskBudget, setRiskBudget] = useState<RiskBudget>("MEDIUM");
   const [rows, setRows] = useState<Row[]>([
@@ -24,22 +22,19 @@ export default function PortfolioOptimizerPage() {
   ]);
 
   const { startTutorial, isTutorialActive } = useTutorial();
+  const hasAutoStarted = useRef(false);
 
-  // Start the portfolio optimizer tutorial when the page loads with tutorial param and no tutorial is active
+  // Start the portfolio optimizer tutorial when the page loads
   useEffect(() => {
-    const tutorialParam = searchParams.get('tutorial');
-    const hasCompletedTutorial = localStorage.getItem('hasCompletedTutorial');
-    const shouldStartTutorial =
-      !isTutorialActive && (tutorialParam === 'portfolio' || (!tutorialParam && !hasCompletedTutorial));
-    if (shouldStartTutorial) {
-      // If no tutorial param is present, it means this is the first page in the sequence
+    if (!isTutorialActive && !hasAutoStarted.current) {
+      hasAutoStarted.current = true;
       const timer = setTimeout(() => {
         startTutorial(PORTFOLIO_OPTIMIZER_TUTORIAL);
       }, 500); // Small delay to ensure DOM is ready
 
       return () => clearTimeout(timer);
     }
-  }, [searchParams, startTutorial, isTutorialActive]);
+  }, [startTutorial, isTutorialActive]);
 
   const [marketPrices, setMarketPrices] = useState<Record<string, number>>({});
   const [suggestions, setSuggestions] = useState<Record<number, any>>({});

@@ -1,17 +1,9 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { useTutorial } from "@/components/tutorial/TutorialContext";
-import {
-  FIRST_TIME_TUTORIAL_STEPS,
-  PORTFOLIO_OPTIMIZER_TUTORIAL,
-  TAX_ADVISOR_TUTORIAL,
-  SCENARIO_SIMULATION_TUTORIAL,
-  TAX_IMPACT_TUTORIAL
-} from "@/components/tutorial/tutorialContent";
 
 const nav = [
   { label: "Portfolio Optimizer", href: "/dashboard/portfolio-optimizer", id: "portfolio-optimizer-link" },
@@ -22,9 +14,7 @@ const nav = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const { isTutorialActive, startTutorial } = useTutorial();
 
   // Persist collapsed state
   useEffect(() => {
@@ -34,22 +24,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     localStorage.setItem("sidebar_collapsed", collapsed ? "1" : "0");
   }, [collapsed]);
-
-  // Check if user is new and start the first-time tutorial
-  useEffect(() => {
-    const hasCompletedTutorial = localStorage.getItem('hasCompletedTutorial');
-
-    // Show the tutorial for users who haven't completed it yet
-    if (!hasCompletedTutorial) {
-      // Small delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        // Navigate to the portfolio optimizer page with tutorial parameter
-        router.push('/dashboard/portfolio-optimizer?tutorial=portfolio');
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [startTutorial, router]);
 
   async function logout() {
     try {
@@ -116,15 +90,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 );
               })}
 
-              {/* Tutorial button */}
-              <button
-                id="tutorial-guide-button"
-                onClick={() => startTutorial(FIRST_TIME_TUTORIAL_STEPS)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2 border bg-white/0 text-white border-white/0 hover:bg-white/10 hover:border-white/10 w-full"
-              >
-                <span className="h-2.5 w-2.5 rounded-full bg-white/40"></span>
-                <span className={collapsed ? "hidden" : "text-sm"}>Tutorial Guide</span>
-              </button>
             </div>
           </nav>
 

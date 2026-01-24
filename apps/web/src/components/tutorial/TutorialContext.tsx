@@ -59,9 +59,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
     } else {
-      // Instead of ending the tutorial, we should allow TutorialFlowManager to handle navigation
-      // So we increment currentStep beyond the length to signal completion
-      setCurrentStep(prev => prev + 1);
+      endTutorial();
     }
   };
 
