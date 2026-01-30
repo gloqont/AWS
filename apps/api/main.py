@@ -27,6 +27,9 @@ from enhanced_decision_classifier import ENHANCED_DECISION_CLASSIFIER, DecisionC
 
 load_dotenv()
 
+BOOT_ID = secrets.token_hex(8)
+BOOT_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
@@ -364,6 +367,11 @@ def me(request: Request):
     return {"ok": True, "user": {"username": "admin", "role": data["role"]}}
 
 
+@app.get("/api/v1/meta/boot")
+def meta_boot():
+    return {"ok": True, "boot_id": BOOT_ID, "boot_at": BOOT_AT}
+
+
 # ----------------------------
 # Portfolio routes
 # ----------------------------
@@ -407,48 +415,6 @@ def portfolio_current(request: Request):
     if not items:
         return {"ok": True, "portfolio": None}
     return {"ok": True, "portfolio": items[0]}
-
-
-@app.post("/api/v1/portfolio/risk-object")
-def portfolio_risk_object(request: Request, body: PortfolioIn):
-    require_admin(request)
-
-    v = validate_portfolio(body)
-    if not v.ok:
-        raise HTTPException(
-            status_code=400,
-            detail={"errors": v.errors, "warnings": v.warnings, "sum_weights": v.sum_weights},
-        )
-
-    max_position = {"LOW": 0.20, "MEDIUM": 0.35, "HIGH": 0.60}[body.risk_budget]
-
-    risk_obj = {
-        "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "risk_budget": body.risk_budget,
-        "portfolio_value": float(body.total_value),
-        "base_currency": body.base_currency,
-        "positions": [{"ticker": p.ticker, "weight": round(p.weight / 100.0, 6)} for p in body.positions],
-        "constraints": {
-            "fully_invested": True,
-            "long_only": True,
-            "max_position": max_position,
-            "min_position": 0.0,
-        },
-        "risk_assumptions": {
-            "horizon_days": 30,
-            "return_model": "HISTORICAL_PLACEHOLDER",
-            "vol_model": "STATIC_PLACEHOLDER",
-            "corr_model": "STATIC_PLACEHOLDER",
-        },
-        "diagnostics": {"sum_weights": round(v.sum_weights / 100.0, 6), "warnings": v.warnings},
-        "decision_log": [
-            {
-                "event": "PORTFOLIO_INTERPRETED",
-                "note": "V1 interprets inputs into a risk object contract.",
-            }
-        ],
-    }
-    return {"ok": True, "risk_object": risk_obj}
 
 
 # ----------------------------
@@ -2592,7 +2558,5 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
             status_code=502,
             detail={"error": "Internal analysis error", "message": str(e), "trace": tb},
         )
-
-
 
 

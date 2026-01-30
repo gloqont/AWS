@@ -26,14 +26,44 @@ export default function PortfolioOptimizerPage() {
 
   // Start the portfolio optimizer tutorial when the page loads
   useEffect(() => {
-    if (!isTutorialActive && !hasAutoStarted.current) {
-      hasAutoStarted.current = true;
-      const timer = setTimeout(() => {
-        startTutorial(PORTFOLIO_OPTIMIZER_TUTORIAL);
-      }, 500); // Small delay to ensure DOM is ready
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-      return () => clearTimeout(timer);
-    }
+    const maybeStartTutorial = () => {
+      if (cancelled || isTutorialActive || hasAutoStarted.current) return;
+      hasAutoStarted.current = true;
+      timer = setTimeout(() => {
+        if (!cancelled) {
+          startTutorial(PORTFOLIO_OPTIMIZER_TUTORIAL);
+        }
+      }, 500); // Small delay to ensure DOM is ready
+    };
+
+    const checkServerBoot = async () => {
+      try {
+        const data = await apiFetch("/api/v1/meta/boot");
+        const bootId = data?.boot_id;
+        if (bootId) {
+          const prevBootId = localStorage.getItem("serverBootId");
+          if (prevBootId !== bootId) {
+            localStorage.setItem("serverBootId", bootId);
+            localStorage.removeItem("hasCompletedTutorial");
+            hasAutoStarted.current = false;
+          }
+        }
+      } catch {
+        // Ignore boot check errors; tutorial can still start normally.
+      } finally {
+        maybeStartTutorial();
+      }
+    };
+
+    checkServerBoot();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [startTutorial, isTutorialActive]);
 
   const [marketPrices, setMarketPrices] = useState<Record<string, number>>({});
@@ -48,7 +78,6 @@ export default function PortfolioOptimizerPage() {
   }, [rows, marketPrices]);
 
   const [status, setStatus] = useState<any>(null);
-  const [riskObject, setRiskObject] = useState<any>(null);
   const [analysis, setAnalysis] = useState<any>(null);
 
   const [err, setErr] = useState<string | null>(null);
@@ -109,7 +138,6 @@ export default function PortfolioOptimizerPage() {
 
   async function doValidate() {
     setErr(null);
-    setRiskObject(null);
     setAnalysis(null);
     setLoading(true);
     try {
@@ -128,7 +156,6 @@ export default function PortfolioOptimizerPage() {
 
   async function doSave() {
     setErr(null);
-    setRiskObject(null);
     setAnalysis(null);
     setLoading(true);
     try {
@@ -144,27 +171,8 @@ export default function PortfolioOptimizerPage() {
     }
   }
 
-  async function doRiskObject() {
-    setErr(null);
-    setAnalysis(null);
-    setLoading(true);
-    try {
-      const data = await apiFetch("/api/v1/portfolio/risk-object", {
-        method: "POST",
-        body: JSON.stringify(payload()),
-      });
-      setRiskObject(data.risk_object);
-    } catch (e: any) {
-      setErr(e.message);
-      setRiskObject(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function doAnalyze() {
     setErr(null);
-    setRiskObject(null);
     setLoading(true);
     try {
       const data = await apiFetch("/api/v1/portfolio/analyze", {
@@ -219,7 +227,7 @@ export default function PortfolioOptimizerPage() {
             <div className="text-sm text-white/60">Advisor Dashboard</div>
             <h1 className="text-3xl font-semibold tracking-tight">Portfolio Optimizer</h1>
             <p className="text-sm text-white/60 mt-1">
-              Build a portfolio + validate 100% allocation + generate a risk object foundation.
+              Build a portfolio + validate 100% allocation.
             </p>
           </div>
         </div>
@@ -297,14 +305,6 @@ export default function PortfolioOptimizerPage() {
                 Save
               </button>
             </div>
-
-            <button
-              onClick={doRiskObject}
-              disabled={!canRun}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 py-2.5 font-medium hover:bg-white/10 disabled:opacity-60"
-            >
-              Generate Risk Object
-            </button>
 
             <button
               onClick={doAnalyze}
@@ -452,7 +452,7 @@ export default function PortfolioOptimizerPage() {
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                <div className="text-xs text-white/60">Annualized Volatility</div>
+                <div className="text-xs text-white/60">Typical Yearly Swing</div>
                 <div className="text-2xl font-semibold mt-1">
                   {(analysis.annualized_vol * 100).toFixed(2)}%
                 </div>
@@ -465,38 +465,6 @@ export default function PortfolioOptimizerPage() {
                 </div>
               </div>
             </div>
-
-            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="text-sm font-medium">Risk Contributions (Variance Share)</div>
-              <div className="text-xs text-white/60 mt-1">These should roughly sum to 1.0</div>
-              <div className="mt-3 space-y-2">
-                {analysis.risk_contributions.map((r: any) => (
-                  <div key={r.ticker} className="flex items-center justify-between text-sm">
-                    <div className="text-white/80">{r.ticker}</div>
-                    <div className="text-white/60">
-                      w={(r.weight * 100).toFixed(2)}% • rc={(r.variance_contribution * 100).toFixed(2)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <pre className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 overflow-auto text-xs text-white/80">
-{JSON.stringify(analysis.corr, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* Risk object */}
-        {riskObject && (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
-            <div className="text-lg font-semibold">Portfolio Risk Object</div>
-            <div className="text-sm text-white/60">
-              Contract for future rolling correlations, regime detection, solvers, and re-optimization jobs.
-            </div>
-            <pre className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 overflow-auto text-xs text-white/80">
-{JSON.stringify(riskObject, null, 2)}
-            </pre>
           </div>
         )}
       </div>

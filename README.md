@@ -8,7 +8,6 @@ This is a standalone project (not connected to any other dashboard).
   - Add tickers + weights
   - Enforces weights sum to 100%
   - Risk budget enum: LOW / MEDIUM / HIGH
-  - Backend returns a "risk object" contract for future quant services
 
 ## Requirements
 - Node.js 18+ (recommended 20+)
