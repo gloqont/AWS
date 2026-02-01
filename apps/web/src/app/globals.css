@@ -20,6 +20,11 @@
   --accent-1: 59 130 246;
   --accent-2: 16 185 129;
   --accent-3: 99 102 241;
+
+  --bubble-a: 0.48;
+  --bubble-b: 0.36;
+  --bubble-c: 0.30;
+  --bubble-d: 0.26;
 }
 
 .dark {
@@ -40,6 +45,11 @@
   --accent-1: 99 102 241;
   --accent-2: 16 185 129;
   --accent-3: 59 130 246;
+
+  --bubble-a: 0.34;
+  --bubble-b: 0.28;
+  --bubble-c: 0.24;
+  --bubble-d: 0.22;
 }
 
 body {
@@ -53,8 +63,8 @@ body {
 
 .app-bubbles {
   background:
-    radial-gradient(760px 460px at 18% 12%, rgb(var(--accent-3) / 0.38), transparent 60%),
-    radial-gradient(560px 380px at 82% 18%, rgb(var(--accent-2) / 0.30), transparent 62%),
-    radial-gradient(640px 440px at 78% 42%, rgb(var(--accent-1) / 0.26), transparent 64%),
-    radial-gradient(520px 380px at 22% 58%, rgb(var(--accent-2) / 0.24), transparent 64%);
+    radial-gradient(760px 460px at 18% 12%, rgb(var(--accent-3) / var(--bubble-a)), transparent 60%),
+    radial-gradient(560px 380px at 82% 18%, rgb(var(--accent-2) / var(--bubble-b)), transparent 62%),
+    radial-gradient(640px 440px at 78% 42%, rgb(var(--accent-1) / var(--bubble-c)), transparent 64%),
+    radial-gradient(520px 380px at 22% 58%, rgb(var(--accent-2) / var(--bubble-d)), transparent 64%);
 }
