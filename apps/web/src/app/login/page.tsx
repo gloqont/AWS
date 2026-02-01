@@ -36,14 +36,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card/90 backdrop-blur p-6 shadow-xl">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight mb-2">GLOQONT</h1>
-          <p className="text-sm text-white/80 mb-4">See What Happens to Your Portfolio BEFORE You Make the Decision</p>
+          <p className="text-sm text-foreground/80 mb-4">See What Happens to Your Portfolio BEFORE You Make the Decision</p>
 
           <div className="mb-6 space-y-4">
-            <div className="text-xs text-white/60">Why GLOQONT?</div>
-            <ul className="text-xs text-white/70 space-y-1">
+            <div className="text-xs text-muted-foreground">Why GLOQONT?</div>
+            <ul className="text-xs text-foreground/70 space-y-1">
               <li>• Portfolio-wide impact analysis - Not just single stock moves</li>
               <li>• Real-time consequence modeling - Before you commit capital</li>
               <li>• Cross-asset correlation detection - See hidden risks</li>
@@ -51,14 +51,14 @@ export default function LoginPage() {
             </ul>
           </div>
 
-          <div className="text-sm text-white/60 mb-4">Start Your Free Analysis</div>
+          <div className="text-sm text-muted-foreground mb-4">Start Your Free Analysis</div>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="text-sm text-white/70">Email Address</label>
+            <label className="text-sm text-foreground/70">Email Address</label>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/25"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/40"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               type="email"
@@ -67,9 +67,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="text-sm text-white/70">Password</label>
+            <label className="text-sm text-foreground/70">Password</label>
             <input
-              className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/25"
+              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/40"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
@@ -85,14 +85,14 @@ export default function LoginPage() {
 
           <button
             disabled={loading}
-            className="w-full rounded-xl bg-white text-black font-medium py-2.5 hover:opacity-90 disabled:opacity-60"
+            className="w-full rounded-xl bg-primary text-primary-foreground font-medium py-2.5 hover:opacity-90 disabled:opacity-60"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
-        <div className="mt-4 text-xs text-white/50 text-center">
-          Tip: set credentials in <code className="text-white/70">apps/api/.env</code>
+        <div className="mt-4 text-xs text-muted-foreground text-center">
+          Tip: set credentials in <code className="text-foreground/70">apps/api/.env</code>
         </div>
       </div>
     </div>

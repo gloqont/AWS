@@ -3,15 +3,58 @@
 @tailwind utilities;
 
 :root {
+  --bg: 248 250 252;
+  --fg: 15 23 42;
+
+  --card: 255 255 255;
+  --card-fg: 15 23 42;
+
+  --muted: 241 245 249;
+  --muted-fg: 71 85 105;
+
+  --border: 226 232 240;
+
+  --primary: 15 23 42;
+  --primary-fg: 248 250 252;
+
+  --accent-1: 59 130 246;
+  --accent-2: 16 185 129;
+  --accent-3: 99 102 241;
+}
+
+.dark {
   --bg: 10 10 12;
-  --text: 240 240 245;
+  --fg: 240 240 245;
+
+  --card: 20 20 26;
+  --card-fg: 240 240 245;
+
+  --muted: 30 30 38;
+  --muted-fg: 160 160 180;
+
+  --border: 60 65 85;
+
+  --primary: 240 240 245;
+  --primary-fg: 10 10 12;
+
+  --accent-1: 99 102 241;
+  --accent-2: 16 185 129;
+  --accent-3: 59 130 246;
 }
 
 body {
-  color: rgb(var(--text));
+  color: rgb(var(--fg));
   background:
-    radial-gradient(1200px 600px at 10% 10%, rgba(99,102,241,0.22), transparent 55%),
-    radial-gradient(900px 500px at 90% 20%, rgba(16,185,129,0.18), transparent 55%),
+    radial-gradient(1200px 600px at 10% 10%, rgb(var(--accent-3) / 0.18), transparent 55%),
+    radial-gradient(900px 500px at 90% 20%, rgb(var(--accent-2) / 0.14), transparent 55%),
     rgb(var(--bg));
   min-height: 100vh;
+}
+
+.app-bubbles {
+  background:
+    radial-gradient(760px 460px at 18% 12%, rgb(var(--accent-3) / 0.38), transparent 60%),
+    radial-gradient(560px 380px at 82% 18%, rgb(var(--accent-2) / 0.30), transparent 62%),
+    radial-gradient(640px 440px at 78% 42%, rgb(var(--accent-1) / 0.26), transparent 64%),
+    radial-gradient(520px 380px at 22% 58%, rgb(var(--accent-2) / 0.24), transparent 64%);
 }

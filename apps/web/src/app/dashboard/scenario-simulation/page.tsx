@@ -536,52 +536,52 @@ function isValidOutputContract(result: any): boolean {
     <div className="min-h-screen px-6 py-8">
       <div className="mx-auto max-w-6xl">
         <div>
-          <div className="text-sm text-white/60">Advisor Dashboard</div>
+          <div className="text-sm text-muted-foreground">GLOQONT</div>
           <h1 className="text-3xl font-semibold tracking-tight">Scenario Simulation</h1>
-          <p className="text-sm text-white/60 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Enter a decision, run a scenario, and generate the “last decision” used by Tax Impact.
           </p>
         </div>
 
 
         {/* Portfolio summary */}
-        <div id="scenario-portfolio-summary" className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-          <div className="text-sm text-white/60">Current Portfolio</div>
+        <div id="scenario-portfolio-summary" className="mt-6 rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
+          <div className="text-sm text-muted-foreground">Current Portfolio</div>
 
           {portfolio ? (
             <div className="mt-2">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <div className="text-xl font-semibold">{portfolio.name}</div>
-                  <div className="text-sm text-white/60 mt-1">
-                    Risk: <span className="text-white">{portfolio.risk_budget}</span> • Value:{" "}
-                    <span className="text-white">{fmtMoney(portfolio.total_value)}</span> •{" "}
-                    <span className="text-white">{portfolio.base_currency}</span>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Risk: <span className="text-foreground">{portfolio.risk_budget}</span> • Value:{" "}
+                    <span className="text-foreground">{fmtMoney(portfolio.total_value)}</span> •{" "}
+                    <span className="text-foreground">{portfolio.base_currency}</span>
                   </div>
                 </div>
 
-                <div className="text-xs text-white/50">
+                <div className="text-xs text-muted-foreground">
                   Saved: {new Date(portfolio.created_at).toLocaleString()}
                 </div>
               </div>
 
               {positionsSummary ? (
-                <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/80">
+                <div className="mt-3 rounded-xl border border-border bg-muted p-3 text-sm text-foreground/80">
                   {positionsSummary}
                 </div>
               ) : null}
             </div>
           ) : (
-            <div className="mt-3 text-sm text-red-200">
-              No saved portfolio found. Go to <span className="text-white">Portfolio Optimizer</span> and click{" "}
-              <span className="text-white">Save</span>.
+            <div className="mt-3 text-sm text-red-500">
+              No saved portfolio found. Go to <span className="text-foreground">Portfolio Optimizer</span> and click{" "}
+              <span className="text-foreground">Save</span>.
             </div>
           )}
         </div>
 
         {/* Decision Type Selector */}
-        <div id="decision-type-selector" className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-          <div className="text-sm text-white/60">Decision Type</div>
+        <div id="decision-type-selector" className="mt-6 rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
+          <div className="text-sm text-muted-foreground">Decision Type</div>
           <div className="mt-2 flex gap-4">
             <label className="flex items-center gap-2">
               <input
@@ -606,7 +606,7 @@ function isValidOutputContract(result: any): boolean {
               <span className="text-sm">Portfolio Rebalancing</span>
             </label>
           </div>
-          <div className="mt-2 text-xs text-white/50">
+          <div className="mt-2 text-xs text-muted-foreground">
             {decisionType === "trade"
               ? "Trade decision: Buying stocks not currently in your portfolio."
               : "Portfolio rebalancing: Buying/selling stocks that are already in your portfolio."}
@@ -615,15 +615,15 @@ function isValidOutputContract(result: any): boolean {
 
         {/* Inputs */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div id="decision-input" className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-            <div className="text-sm text-white/60">Decision</div>
+          <div id="decision-input" className="lg:col-span-2 rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
+            <div className="text-sm text-muted-foreground">Decision</div>
             <textarea
-              className="mt-2 w-full min-h-[120px] rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/25"
+              className="mt-2 w-full min-h-[120px] rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/40"
               value={decisionText}
               onChange={(e) => setDecisionText(e.target.value)}
               placeholder='Example: "Buy Nvidia 1%" or "Sell Apple 25% and put it on Google"'
             />
-            <div className="mt-2 text-xs text-white/50">
+            <div className="mt-2 text-xs text-muted-foreground">
               {decisionType === "trade"
                 ? "Enter a trade decision (e.g., 'Buy NVDA 1%'). Stocks not in portfolio."
                 : "Enter a portfolio rebalancing decision (e.g., 'Sell AAPL 25% and buy GOOGL'). Stocks must be in portfolio."}
@@ -633,17 +633,17 @@ function isValidOutputContract(result: any): boolean {
             {showVisualizeRisk && result && (
               <button
                 onClick={visualizeRisk}
-                className="mt-4 w-full rounded-xl bg-white text-black font-medium px-4 py-2.5 hover:opacity-90 disabled:opacity-60"
+                className="mt-4 w-full rounded-xl bg-primary text-primary-foreground font-medium px-4 py-2.5 hover:opacity-90 disabled:opacity-60"
               >
                 Visualize Risk
               </button>
             )}
           </div>
 
-          <div id="tax-country-and-actions" className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-            <div className="text-sm text-white/60">Tax Country</div>
+          <div id="tax-country-and-actions" className="rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
+            <div className="text-sm text-muted-foreground">Tax Country</div>
             <input
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/25"
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/40"
               value={taxCountry}
               onChange={(e) => setTaxCountry(e.target.value)}
               placeholder="United States"
@@ -653,14 +653,14 @@ function isValidOutputContract(result: any): boolean {
               id="run-scenario-button"
               onClick={runScenario}
               disabled={loading || !portfolio}
-              className="mt-4 w-full rounded-xl bg-white text-black font-medium px-4 py-2.5 hover:opacity-90 disabled:opacity-60"
+              className="mt-4 w-full rounded-xl bg-primary text-primary-foreground font-medium px-4 py-2.5 hover:opacity-90 disabled:opacity-60"
             >
               {loading ? "Running..." : "Run Scenario"}
             </button>
 
             <button
               onClick={() => (window.location.href = "/dashboard/tax-impact")}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 font-medium hover:bg-white/10"
+              className="mt-2 w-full rounded-xl border border-border bg-card px-4 py-2.5 font-medium hover:bg-muted"
             >
               Open Tax Impact
             </button>
@@ -669,17 +669,17 @@ function isValidOutputContract(result: any): boolean {
 
         {/* Error */}
         {err && (
-          <div className="mt-6 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-200">
+          <div className="mt-6 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-600">
             {err}
           </div>
         )}
 
         {/* Result */}
         {result && !showOnlyVisualizations && (
-          <div id="scenario-results" className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
+          <div id="scenario-results" className="mt-6 rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
             {/* Validate strict output contract before rendering */}
             {!isValidOutputContract(result) ? (
-              <div className="mt-4 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-200">
+              <div className="mt-4 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-600">
                 Decision impact could not be computed reliably.
               </div>
             ) : (
@@ -689,8 +689,8 @@ function isValidOutputContract(result: any): boolean {
                   <div className="text-sm font-medium">Impact of Your Decision</div>
 
                   {/* Decision Summary Section */}
-                  <div className="mt-2 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Decision Summary</div>
+                  <div className="mt-2 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Decision Summary</div>
                     <div className="mt-1 text-sm">
                       {result.executed_decision?.combined_actions_description ||
                        `You ${result.decision_summary?.allocation_change_pct && result.decision_summary?.allocation_change_pct > 0 ? 'increased' : 'decreased'} exposure to ${result.decision_summary?.asset?.symbol || result.executed_decision?.primary_exposure_ticker} by ${result.decision_summary?.allocation_change_pct || result.executed_decision?.portfolio_weight_affected_pct}% of portfolio value.`}
@@ -698,8 +698,8 @@ function isValidOutputContract(result: any): boolean {
                   </div>
 
                   {/* Primary Exposure Change */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Primary Exposure Change</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Primary Exposure Change</div>
                     <div className="mt-2 text-sm">
                       {result.decision_summary?.decision_type === "multi_asset_decision" && result.decision_summary?.actions ? (
                         <>
@@ -733,8 +733,8 @@ function isValidOutputContract(result: any): boolean {
                   </div>
 
                   {/* What Changed Because of This Decision */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">What Changed Because of This Decision</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">What Changed Because of This Decision</div>
                     <div className="mt-2 text-sm">
                       {result.decision_summary?.decision_type === "multi_asset_decision" && result.decision_summary?.actions ? (
                         <>
@@ -775,8 +775,8 @@ function isValidOutputContract(result: any): boolean {
                   </div>
 
                   {/* Downside/Upside Risk */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Downside / Upside Risk</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Downside / Upside Risk</div>
                     <div className="mt-2 text-sm">
                       <div><strong>Estimated impact over 1-month horizon under current volatility regime:</strong></div>
                       <div className="mt-1">• <strong>Downside (stress scenario):</strong> <span className="text-red-400">{fmtPct(result.risk_impact?.downside_pct)}</span></div>
@@ -789,7 +789,7 @@ function isValidOutputContract(result: any): boolean {
                           Triggered by {result.decision_summary?.asset?.country?.toLowerCase() || "market"} market drawdown or {result.decision_summary?.asset?.sector?.toLowerCase() || "sector"} sector shock
                         </div>
                       )}
-                      <div className="mt-1">• <strong>Expected outcome (base case):</strong> <span className="text-white">{fmtPct(result.risk_impact?.expected_pct)}</span></div>
+                      <div className="mt-1">• <strong>Expected outcome (base case):</strong> <span className="text-foreground">{fmtPct(result.risk_impact?.expected_pct)}</span></div>
                       <div className="mt-1">• <strong>Upside (favorable scenario):</strong> <span className="text-green-400">{fmtPct(result.risk_impact?.upside_pct)}</span></div>
                       <div className="mt-1 text-xs italic">Confidence level: {result.risk_impact?.confidence_note}</div>
                     </div>
@@ -797,8 +797,8 @@ function isValidOutputContract(result: any): boolean {
 
                   {/* Time to Risk Realization */}
                   {result.time_to_risk && (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                      <div className="font-medium text-amber-200">Time to Risk Realization</div>
+                    <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                      <div className="font-medium text-foreground">Time to Risk Realization</div>
                       <div className="mt-2 text-sm">
                         <div><strong>Time to potential material drawdown:</strong> ~{result.time_to_risk?.estimated_days} trading days</div>
                         <div className="mt-1 text-xs">Definition: Estimated time for losses to exceed a predefined risk threshold under adverse market conditions.</div>
@@ -807,8 +807,8 @@ function isValidOutputContract(result: any): boolean {
                   )}
 
                   {/* Market Regimes Sensitivity */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Market Regimes This Decision Is Sensitive To</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Market Regimes This Decision Is Sensitive To</div>
                     <div className="mt-2 text-sm">
                       <div><strong>Heightened sensitivity to:</strong></div>
                       <ul className="list-disc list-inside ml-2 mt-1">
@@ -821,14 +821,14 @@ function isValidOutputContract(result: any): boolean {
                   </div>
 
                   {/* Portfolio Concentration After Decision */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Portfolio Concentration After the Decision</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Portfolio Concentration After the Decision</div>
                     <div className="mt-2 text-sm">
                       <div><strong>Top exposures after executing this trade:</strong></div>
                       <table className="w-full text-sm mt-2">
                         <tbody>
                           {(result.concentration_after_decision?.top_exposures || []).map((r: any, idx: number) => (
-                            <tr key={idx} className="border-b border-white/5">
+                            <tr key={idx} className="border-b border-border/60">
                               <td className="py-1">{r.symbol}</td>
                               <td className="py-1 text-right">{r.weight_pct}%</td>
                             </tr>
@@ -844,8 +844,8 @@ function isValidOutputContract(result: any): boolean {
                   </div>
 
                   {/* Irreversibility Risk */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Irreversibility Risk</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Irreversibility Risk</div>
                     <div className="mt-2 text-sm">
                       <div><strong>Estimated irreversible capital loss:</strong> {fmtMoney(result.irreversibility_detailed?.irreversible_loss_usd || 0)} ({result.irreversibility_detailed?.irreversible_loss_pct}%)</div>
                       <div className="mt-1 text-xs">Assumptions: Forced exit during market stress, liquidity or behavioral constraints prevent optimal timing</div>
@@ -857,8 +857,8 @@ function isValidOutputContract(result: any): boolean {
                   {/* Irreversible Loss Heatmap - REMOVED PER REQUEST */}
 
                   {/* Bottom-Line Exposure Summary */}
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="font-medium text-amber-200">Bottom-Line Exposure Summary</div>
+                  <div className="mt-4 rounded-xl border border-border bg-muted p-4">
+                    <div className="font-medium text-foreground">Bottom-Line Exposure Summary</div>
                     <div className="mt-2 text-sm">
                       <div><strong>Decision-attributed downside risk:</strong></div>
                       <div className="text-lg font-semibold mt-1">{fmtMoney(result.decision_summary_line?.max_decision_attributed_loss_usd || 0)} | {result.decision_summary_line?.max_decision_attributed_loss_pct}% of portfolio</div>
@@ -877,7 +877,7 @@ function isValidOutputContract(result: any): boolean {
               <h2 className="text-2xl font-semibold">Risk Visualizations</h2>
               <button
                 onClick={() => setShowOnlyVisualizations(false)}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
+                className="rounded-xl border border-border bg-card px-4 py-2 text-sm hover:bg-muted"
               >
                 Back to Results
               </button>
@@ -885,7 +885,7 @@ function isValidOutputContract(result: any): boolean {
 
             {/* Validate strict output contract before rendering */}
             {!isValidOutputContract(result) ? (
-              <div className="text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-200">
+              <div className="text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-600">
                 Decision impact could not be computed reliably.
               </div>
             ) : (
@@ -907,7 +907,7 @@ function isValidOutputContract(result: any): boolean {
                   <div>
                     <h3 className="text-lg font-medium mb-4">Individual Action Visualizations</h3>
                     {result.individual_visualizations.map((visData: any, index: number) => (
-                      <div key={index} className="mb-8 p-4 border border-white/10 rounded-xl bg-black/10">
+                      <div key={index} className="mb-8 p-4 border border-border rounded-xl bg-muted/70">
                         <h4 className="text-md font-medium mb-2">
                           Action {index + 1}: {visData.decision_delta?.asset} {visData.decision_delta?.change > 0 ? 'Buy' : 'Sell'} {Math.abs(visData.decision_delta?.change || 0)}%
                         </h4>
