@@ -21,3 +21,9 @@ yarn-error.log*
 pnpm-debug.log*
 data/cache/
 data/portfolios.json
+apps/api/.venv/
+apps/web/public/node_modules/
+data/portfolios.json
+apps/api/.venv/
+apps/web/public/node_modules/
+data/portfolios.json

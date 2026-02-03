@@ -12,6 +12,7 @@ This is a standalone project (not connected to any other dashboard).
 ## Requirements
 - Node.js 18+ (recommended 20+)
 - Python 3.10+ (recommended 3.11)
+- Cloudflare Tunnel (optional, for public access)
 
 ## Setup
 
@@ -25,21 +26,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 
+# If you see repeated reloads from .venv changes, either:
+# 1) keep the included .watchfilesignore, or
+# 2) run: uvicorn main:app --reload --reload-dir . --reload-exclude ".venv/*" --port 8000
+
 ```
 API docs: http://localhost:8000/docs
 
 ### 2) Frontend (Next.js)
 ```bash
-cd apps/web
-cp .env.local.example .env.local
+cd /Users/ommody/Desktop/GLOQONTv5/GLOQONTv4/apps/web
 npm install
 npm run dev
+```
+Open: http://localhost:3000
 
-
+Optional: run on a custom port (example `3001`)
+```bash
 cd /Users/ommody/Desktop/GLOQONTv5/GLOQONTv4/apps/web
 npm run dev -- -p 3001
 ```
-Open: http://localhost:3000
+
+```bash
+cd /Users/ommody/Desktop/GLOQONTv5
+cloudflared tunnel run gloqont-mvp
+```
+
+
 
 ## Login
 - Go to http://localhost:3000/login

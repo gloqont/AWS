@@ -105,6 +105,7 @@ class AnalyzeIn(BaseModel):
     positions: List[PositionIn]
     lookback_days: int = 365
     interval: Literal["1d", "1wk", "1mo"] = "1d"
+    projection_horizon_years: Literal[1, 3, 5, 10] = 5
 
 
 # ✅ Decision / Scenario Simulation models
@@ -2501,7 +2502,11 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
         ppy = periods_per_year_from_interval(body.interval)
         m = portfolio_metrics(rets, weights, periods_per_year=ppy)
 
-        if not _is_finite(m["annualized_vol"]) or not _is_finite(m["max_drawdown"]):
+        if (
+            not _is_finite(m["annualized_vol"])
+            or not _is_finite(m["max_drawdown"])
+            or not _is_finite(m["annualized_return"])
+        ):
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -2531,7 +2536,10 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
             "tickers": tlist,
             "lookback_days": body.lookback_days,
             "interval": body.interval,
+            "projection_horizon_years": body.projection_horizon_years,
             "annualized_vol": float(m["annualized_vol"]),
+            "projected_total_return": float((1.0 + m["annualized_return"]) ** body.projection_horizon_years - 1.0),
+            "projected_volatility": float(m["annualized_vol"] * math.sqrt(body.projection_horizon_years)),
             "max_drawdown": float(m["max_drawdown"]),
             "corr": {
                 "rows": tlist,
@@ -2558,5 +2566,3 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
             status_code=502,
             detail={"error": "Internal analysis error", "message": str(e), "trace": tb},
         )
-
-

@@ -1,6 +1,19 @@
 {
   "items": [
     {
+      "id": "dec_e83f03064740",
+      "decision_text": "buy AAPL 5%",
+      "tax_country": "United States",
+      "portfolio_id": "prt_09460a74eae1",
+      "portfolio_value": 4746.250152587891,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-02-01T18:31:05Z"
+    },
+    {
       "id": "dec_f994f40b9742",
       "decision_text": "buy AAPL 5%",
       "tax_country": "India",

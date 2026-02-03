@@ -13,9 +13,12 @@ function toNumber(s: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+const HORIZON_OPTIONS = [1, 3, 5, 10] as const;
+
 export default function PortfolioOptimizerPage() {
   const [name, setName] = useState("My Portfolio");
   const [riskBudget, setRiskBudget] = useState<RiskBudget>("MEDIUM");
+  const [projectionHorizonIndex, setProjectionHorizonIndex] = useState(2);
   const [rows, setRows] = useState<Row[]>([
     { ticker: "AAPL", quantity: "10" },
     { ticker: "MSFT", quantity: "5" },
@@ -85,6 +88,8 @@ export default function PortfolioOptimizerPage() {
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const projectionHorizonYears = HORIZON_OPTIONS[projectionHorizonIndex] ?? 5;
 
   const sum = useMemo(() => {
     const tv = totalValue || 0;
@@ -185,6 +190,7 @@ export default function PortfolioOptimizerPage() {
           positions: payload().positions,
           lookback_days: 365,
           interval: "1d",
+          projection_horizon_years: projectionHorizonYears,
         }),
       });
       setAnalysis(data.analysis);
@@ -229,9 +235,6 @@ export default function PortfolioOptimizerPage() {
           <div>
             <div className="text-sm text-muted-foreground">GLOQONT</div>
             <h1 className="text-3xl font-semibold tracking-tight">Portfolio Optimizer</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Build a portfolio + validate 100% allocation.
-            </p>
           </div>
         </div>
 
@@ -268,7 +271,7 @@ export default function PortfolioOptimizerPage() {
               ))}
             </div>
             <div className="mt-2 text-xs text-muted-foreground">
-              V1 enum now. Later: constraints + regime logic + solver objectives.
+              
             </div>
           </div>
 
@@ -331,7 +334,6 @@ export default function PortfolioOptimizerPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-lg font-semibold">Positions</div>
-              <div className="text-sm text-muted-foreground">Tickers + weights. Backend enforces 100% total.</div>
             </div>
             <button
               onClick={addRow}
@@ -448,27 +450,78 @@ export default function PortfolioOptimizerPage() {
         {/* Risk analysis (real data) */}
         {analysis && (
           <div className="mt-6 rounded-2xl border border-border bg-card/80 backdrop-blur p-5">
-            <div className="text-lg font-semibold">Risk Analysis</div>
-            <div className="text-sm text-muted-foreground">
-              Historical data ({analysis.lookback_days}d, {analysis.interval})
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="text-xs text-muted-foreground">Typical Yearly Swing</div>
-                <div className="text-2xl font-semibold mt-1">
-                  {(analysis.annualized_vol * 100).toFixed(2)}%
-                </div>
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-lg font-semibold">Risk Analysis</div>
+              <div className="text-sm text-muted-foreground">
+                Historical data ({analysis.lookback_days}d, {analysis.interval}) · Projection horizon {analysis.projection_horizon_years}y
               </div>
-
-              <div className="rounded-xl border border-border bg-muted p-4">
-                <div className="text-xs text-muted-foreground">Max Drawdown</div>
-                <div className="text-2xl font-semibold mt-1">
-                  {(analysis.max_drawdown * 100).toFixed(2)}%
-                </div>
+            </div>
+            <div id="projection-horizon" className="w-full max-w-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">Projection Horizon</div>
+                <button
+                  onClick={doAnalyze}
+                  disabled={!canRun}
+                  className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                >
+                  Apply
+                </button>
+              </div>
+              <div className="mt-1 text-sm font-medium">
+                {projectionHorizonYears} year{projectionHorizonYears === 1 ? "" : "s"}
+              </div>
+              <input
+                className="mt-2 w-full accent-foreground"
+                type="range"
+                min={0}
+                max={HORIZON_OPTIONS.length - 1}
+                step={1}
+                value={projectionHorizonIndex}
+                onChange={(e) => setProjectionHorizonIndex(Number(e.target.value))}
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                {HORIZON_OPTIONS.map((v) => (
+                  <span key={v}>{v}y</span>
+                ))}
               </div>
             </div>
           </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <div className="text-xs text-muted-foreground">Typical Yearly Swing</div>
+              <div className="text-2xl font-semibold mt-1">
+                {(analysis.annualized_vol * 100).toFixed(2)}%
+              </div>
+              </div>
+
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <div className="text-xs text-muted-foreground">Max Drawdown</div>
+              <div className="text-2xl font-semibold mt-1">
+                {(analysis.max_drawdown * 100).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <div className="text-xs text-muted-foreground">
+                Projected Volatility ({analysis.projection_horizon_years}y)
+              </div>
+              <div className="text-2xl font-semibold mt-1">
+                {(analysis.projected_volatility * 100).toFixed(2)}%
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted p-4">
+              <div className="text-xs text-muted-foreground">
+                Projected Total Return ({analysis.projection_horizon_years}y)
+              </div>
+              <div className="text-2xl font-semibold mt-1">
+                {(analysis.projected_total_return * 100).toFixed(2)}%
+              </div>
+            </div>
+          </div>
+        </div>
         )}
       </div>
     </div>

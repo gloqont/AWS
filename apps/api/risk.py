@@ -679,6 +679,9 @@ def portfolio_metrics(returns: pd.DataFrame, weights: np.ndarray, periods_per_ye
     port = pd.Series(port, index=returns.index, name="portfolio")
 
     vol = float(np.nanstd(port.to_numpy(), ddof=1) * np.sqrt(periods_per_year))
+    log_returns = np.log1p(port.to_numpy())
+    avg_log_return = float(np.nanmean(log_returns))
+    cagr = float(np.expm1(avg_log_return * periods_per_year))
 
     idx = (1.0 + port.fillna(0.0)).cumprod()
     mdd = max_drawdown(idx)
@@ -694,6 +697,7 @@ def portfolio_metrics(returns: pd.DataFrame, weights: np.ndarray, periods_per_ye
 
     return {
         "annualized_vol": vol,
+        "annualized_return": cagr,
         "max_drawdown": float(mdd),
         "risk_contribution": rc,
     }
