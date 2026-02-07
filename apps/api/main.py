@@ -9,11 +9,10 @@ from typing import List, Literal, Optional, Dict, Any
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel, Field, field_validator
 
 from risk import fetch_prices, portfolio_metrics, periods_per_year_from_interval
@@ -30,16 +29,10 @@ load_dotenv()
 BOOT_ID = secrets.token_hex(8)
 BOOT_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
-serializer = URLSafeTimedSerializer(SESSION_SECRET)
-SESSION_COOKIE = "advisor_session"
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 hours
-
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+DATA_DIR = os.getenv("DATA_DIR", DEFAULT_DATA_DIR)
 PORTFOLIOS_PATH = os.path.join(DATA_DIR, "portfolios.json")
 DECISIONS_PATH = os.path.join(DATA_DIR, "decisions.json")  # ✅
 TAX_RULES_PATH = os.path.join(DATA_DIR, "tax_rules.json")  # ✅
@@ -93,11 +86,6 @@ class ValidationOut(BaseModel):
     sum_weights: float
     errors: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
-
-
-class LoginIn(BaseModel):
-    username: str
-    password: str
 
 
 class AnalyzeIn(BaseModel):
@@ -324,48 +312,7 @@ def validate_portfolio(p: PortfolioBase, tolerance: float = 0.01) -> ValidationO
 # Auth helpers
 # ----------------------------
 def require_admin(request: Request):
-    # Bypass auth checks in development: always return a fake admin user.
-    # This allows the frontend to call API endpoints without performing login.
     return {"role": "admin", "sub": "admin"}
-
-
-# ----------------------------
-# Auth routes
-# ----------------------------
-@app.post("/api/v1/auth/login")
-def login(body: LoginIn, response: Response):
-    if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    session = {
-        "sub": "admin",
-        "role": "admin",
-        "nonce": secrets.token_hex(8),
-        "iat": int(time.time()),
-    }
-    token = serializer.dumps(session)
-    response.set_cookie(
-        key=SESSION_COOKIE,
-        value=token,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=SESSION_MAX_AGE_SECONDS,
-        path="/",
-    )
-    return {"ok": True}
-
-
-@app.post("/api/v1/auth/logout")
-def logout(response: Response):
-    response.delete_cookie(key=SESSION_COOKIE, path="/")
-    return {"ok": True}
-
-
-@app.get("/api/v1/auth/me")
-def me(request: Request):
-    data = require_admin(request)
-    return {"ok": True, "user": {"username": "admin", "role": data["role"]}}
 
 
 @app.get("/api/v1/meta/boot")

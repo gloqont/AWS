@@ -1,59 +1,83 @@
-# Advisor Dashboard (Admin-only MVP)
+# GLOQONT Advisor Dashboard
 
-This is a standalone project (not connected to any other dashboard).
+Monorepo with:
+- `apps/api`: FastAPI backend
+- `apps/web`: Next.js frontend
 
-## Features
-- Admin-only login (single account configured via env vars)
-- Portfolio Optimizer / Constructor
-  - Add tickers + weights
-  - Enforces weights sum to 100%
-  - Risk budget enum: LOW / MEDIUM / HIGH
+## Production Readiness Changes Included
+- Authentication is disabled in this version.
+- Runtime data directory is configurable (`DATA_DIR`).
+- EC2 deployment assets added under `deploy/` (systemd + nginx + scripts).
 
-## Requirements
-- Node.js 18+ (recommended 20+)
-- Python 3.10+ (recommended 3.11)
-- Cloudflare Tunnel (optional, for public access)
+## Environment Setup
 
-## Setup
+### API env
+Copy `apps/api/.env.example` to `apps/api/.env` and set:
+- `CORS_ORIGINS` to your domain(s)
+- `DATA_DIR=/var/lib/gloqont/data` on EC2 (recommended)
 
-### 1) Backend (FastAPI)
+### Web env
+Copy `apps/web/.env.example` to `apps/web/.env` and set:
+- `API_PROXY_TARGET=http://127.0.0.1:8000` on EC2
+
+## Local Development
+
+### Backend
 ```bash
-cd /Users/ommody/Desktop/GLOQONTv5/GLOQONTv4/apps/api
-deactivate
-rm -rf .venv
-python3.11 -m venv .venv
+cd apps/api
+python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# If you see repeated reloads from .venv changes, either:
-# 1) keep the included .watchfilesignore, or
-# 2) run: uvicorn main:app --reload --reload-dir . --reload-exclude ".venv/*" --port 8000
-
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-API docs: http://localhost:8000/docs
 
-### 2) Frontend (Next.js)
+### Frontend
 ```bash
-cd /Users/ommody/Desktop/GLOQONTv5/GLOQONTv4/apps/web
+cd apps/web
 npm install
 npm run dev
 ```
-Open: http://localhost:3000
 
-Optional: run on a custom port (example `3001`)
+Open `http://localhost:3000/dashboard/portfolio-optimizer`.
+
+## EC2 Deployment (Ubuntu 24.04)
+
+Assumes app lives at `/opt/gloqont`.
+
+1. Copy project to the instance and install base packages:
 ```bash
-cd /Users/ommody/Desktop/GLOQONTv5/GLOQONTv4/apps/web
-npm run dev -- -p 3001
+cd /opt/gloqont
+./deploy/ec2/bootstrap.sh
 ```
 
+2. Create env files:
 ```bash
-cd /Users/ommody/Desktop/GLOQONTv5
-cloudflared tunnel run gloqont-mvp
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
 ```
 
+3. Deploy services:
+```bash
+APP_ROOT=/opt/gloqont ./deploy/ec2/deploy.sh
+```
 
+4. Verify:
+```bash
+systemctl status gloqont-api
+systemctl status gloqont-web
+systemctl status nginx
+curl -I http://127.0.0.1:8000/docs
+curl -I http://127.0.0.1
+```
 
-## Login
-- Go to http://localhost:3000/login
-- Use ADMIN_USERNAME / ADMIN_PASSWORD from `apps/api/.env`
+## Push to New GitHub Repo
+
+```bash
+git remote remove origin
+git remote add origin https://github.com/gloqont/AWS.git
+git add .
+git commit -m "Prepare app for AWS EC2 deployment"
+git push -u origin main
+```
+
+If your branch is not `main`, replace `main` with your current branch.

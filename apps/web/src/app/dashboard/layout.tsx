@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const nav = [
@@ -25,14 +24,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     localStorage.setItem("sidebar_collapsed", collapsed ? "1" : "0");
   }, [collapsed]);
-
-  async function logout() {
-    try {
-      await apiFetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/login";
-    }
-  }
 
   function restartPortfolioTutorial() {
     localStorage.removeItem("hasCompletedTutorial");
@@ -112,19 +103,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </nav>
 
-          {/* Logout at bottom */}
+          {/* Actions */}
           <div className="px-3 pb-4">
             <button
               onClick={restartPortfolioTutorial}
               className="mb-2 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm hover:bg-muted"
             >
               {collapsed ? "▶" : "Restart Tutorial"}
-            </button>
-            <button
-              onClick={logout}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm hover:bg-muted"
-            >
-              {collapsed ? "⎋" : "Logout"}
             </button>
           </div>
 
@@ -136,9 +121,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ) : (
               <div className="flex items-start justify-between gap-3">
                 <div className="leading-relaxed">
-                  v1 • admin-only
+                  v1
                   <br />
-                  Protected routes
+                  Auth disabled
                 </div>
                 <ThemeToggle />
               </div>
