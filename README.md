@@ -20,6 +20,7 @@ Copy `apps/api/.env.example` to `apps/api/.env` and set:
 ### Web env
 Copy `apps/web/.env.example` to `apps/web/.env` and set:
 - `API_PROXY_TARGET=http://127.0.0.1:8000` on EC2
+- `NEXT_PUBLIC_AUTH_BYPASS=true` to temporarily disable login/signup and open dashboard access
 - `NEXT_PUBLIC_COGNITO_DOMAIN` and `NEXT_PUBLIC_COGNITO_CLIENT_ID` for login
 
 ## Local Development
