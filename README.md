@@ -5,8 +5,9 @@ Monorepo with:
 - `apps/web`: Next.js frontend
 
 ## Production Readiness Changes Included
-- Authentication is disabled in this version.
-- Runtime data directory is configurable (`DATA_DIR`).
+- Optional Cognito JWT auth (`AUTH_REQUIRED=true`) with per-user data scoping.
+- Optional DynamoDB persistence for users/portfolios/decisions when AWS env vars are configured.
+- Runtime data directory is configurable (`DATA_DIR`) for local/legacy file persistence.
 - EC2 deployment assets added under `deploy/` (systemd + nginx + scripts).
 
 ## Environment Setup

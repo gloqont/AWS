@@ -12,20 +12,23 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
 
   const current = theme === "system" ? systemTheme : theme;
   const isDark = current === "dark";
+  const nextTheme = isDark ? "light" : "dark";
+  const nextLabel = nextTheme === "light" ? "Light" : "Dark";
+  const nextIcon = nextTheme === "light" ? "☀️" : "🌙";
 
   return (
     <button
       type="button"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={() => setTheme(nextTheme)}
       className={[
         "inline-flex items-center gap-2 rounded-xl border border-border bg-card text-xs text-foreground hover:bg-muted",
         compact ? "px-2.5 py-2" : "px-3 py-2",
       ].join(" ")}
-      aria-label="Toggle theme"
-      title="Toggle theme"
+      aria-label={`Switch to ${nextLabel} mode`}
+      title={`Switch to ${nextLabel} mode`}
     >
-      <span className="text-base">{isDark ? "🌙" : "☀️"}</span>
-      {!compact && <span>{isDark ? "Dark" : "Light"}</span>}
+      <span className="text-base">{nextIcon}</span>
+      {!compact && <span>{nextLabel}</span>}
     </button>
   );
 }
