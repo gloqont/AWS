@@ -1,13 +1,19 @@
 // Use same-origin paths so Next.js dev server can proxy `/api` to the backend.
+import { getAuthToken } from "@/lib/auth";
+
 const API_BASE = "";
 
 export async function apiFetch(path: string, init?: RequestInit) {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
+    headers,
   });
 
   const text = await res.text();

@@ -461,12 +461,13 @@ def require_admin(request: Request):
         raise HTTPException(status_code=500, detail="Cognito auth is enabled but config is incomplete")
 
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-
-    token = auth_header.replace("Bearer ", "", 1).strip()
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "", 1).strip()
     if not token:
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
+        token = (request.cookies.get("gloqont_auth_token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
 
     issuer = COGNITO_ISSUER_URL.rstrip("/")
 

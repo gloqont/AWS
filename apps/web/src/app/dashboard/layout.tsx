@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { clearAuthToken, getCognitoLogoutUrl } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const nav = [
@@ -29,6 +30,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     localStorage.removeItem("hasCompletedTutorial");
     localStorage.setItem("forcePortfolioTutorial", "1");
     window.location.href = "/dashboard/portfolio-optimizer";
+  }
+
+  function logout() {
+    clearAuthToken();
+    window.location.href = getCognitoLogoutUrl();
   }
 
   return (
@@ -111,6 +117,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               {collapsed ? "▶" : "Restart Tutorial"}
             </button>
+            <button
+              onClick={logout}
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm hover:bg-muted"
+            >
+              {collapsed ? "↗" : "Sign Out"}
+            </button>
           </div>
 
           <div className="px-4 py-4 border-t border-border text-xs text-muted-foreground">
@@ -123,7 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="leading-relaxed">
                   v1
                   <br />
-                  Auth disabled
+                  Cognito-ready
                 </div>
                 <ThemeToggle />
               </div>
