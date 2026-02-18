@@ -8,8 +8,13 @@ function baseOrigin() {
 }
 
 function getEnv(name: string): string {
-  const v = process.env[name];
-  return typeof v === "string" ? v.trim() : "";
+  const envMap: Record<string, string | undefined> = {
+    NEXT_PUBLIC_COGNITO_DOMAIN: process.env.NEXT_PUBLIC_COGNITO_DOMAIN,
+    NEXT_PUBLIC_COGNITO_CLIENT_ID: process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID,
+    NEXT_PUBLIC_COGNITO_REDIRECT_URI: process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI,
+    NEXT_PUBLIC_COGNITO_LOGOUT_REDIRECT_URI: process.env.NEXT_PUBLIC_COGNITO_LOGOUT_REDIRECT_URI,
+  };
+  return (envMap[name] || "").trim();
 }
 
 function cookieFromDocument(name: string): string | null {
