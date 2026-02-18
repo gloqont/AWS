@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clearSessionCookies, setSessionCookies, verifyIdToken } from "@/lib/server/cognito";
+import { claimAsString, clearSessionCookies, setSessionCookies, verifyIdToken } from "@/lib/server/cognito";
 import { upsertUserProfileFromClaims } from "@/lib/server/user-sync";
 
 export async function POST(req: Request) {
@@ -30,15 +30,15 @@ export async function POST(req: Request) {
     try {
       await upsertUserProfileFromClaims({
         sub: claims.sub,
-        email: claims.email,
-        name: claims.name,
-        "cognito:username": claims["cognito:username"] as string | undefined,
+        email: claimAsString(claims.email),
+        name: claimAsString(claims.name),
+        "cognito:username": claimAsString(claims["cognito:username"]),
       });
     } catch (syncError) {
       console.error("user sync failed after session set", syncError);
     }
 
-    return NextResponse.json({ ok: true, sub: claims.sub, email: claims.email || null });
+    return NextResponse.json({ ok: true, sub: claims.sub, email: claimAsString(claims.email) || null });
   } catch (error: any) {
     clearSessionCookies();
     return NextResponse.json({ error: error?.message || "Invalid token" }, { status: 401 });

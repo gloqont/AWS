@@ -74,6 +74,10 @@ export async function verifyIdToken(token: string) {
   return verifier.verify(token);
 }
 
+export function claimAsString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 function base64Url(input: Buffer) {
   return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }

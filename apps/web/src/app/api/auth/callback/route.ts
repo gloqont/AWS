@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  claimAsString,
   clearOAuthCookies,
   clearSessionCookies,
   exchangeAuthorizationCode,
@@ -54,9 +55,9 @@ export async function GET(req: Request) {
     try {
       await upsertUserProfileFromClaims({
         sub: claims.sub,
-        email: claims.email,
-        name: claims.name,
-        "cognito:username": claims["cognito:username"] as string | undefined,
+        email: claimAsString(claims.email),
+        name: claimAsString(claims.name),
+        "cognito:username": claimAsString(claims["cognito:username"]),
       });
     } catch (syncError) {
       console.error("user sync failed after callback", syncError);

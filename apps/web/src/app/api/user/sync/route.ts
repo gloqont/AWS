@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getIdTokenFromCookies, verifyIdToken } from "@/lib/server/cognito";
+import { claimAsString, getIdTokenFromCookies, verifyIdToken } from "@/lib/server/cognito";
 import { upsertUserProfileFromClaims } from "@/lib/server/user-sync";
 
 export async function POST() {
@@ -12,9 +12,9 @@ export async function POST() {
     const claims = await verifyIdToken(token);
     const profile = await upsertUserProfileFromClaims({
       sub: claims.sub,
-      email: claims.email,
-      name: claims.name,
-      "cognito:username": claims["cognito:username"] as string | undefined,
+      email: claimAsString(claims.email),
+      name: claimAsString(claims.name),
+      "cognito:username": claimAsString(claims["cognito:username"]),
     });
 
     return NextResponse.json({ ok: true, profile });

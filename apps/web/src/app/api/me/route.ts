@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getIdTokenFromCookies, verifyIdToken } from "@/lib/server/cognito";
+import { claimAsString, getIdTokenFromCookies, verifyIdToken } from "@/lib/server/cognito";
 
 export async function GET() {
   try {
@@ -13,8 +13,8 @@ export async function GET() {
       authenticated: true,
       user: {
         sub: claims.sub,
-        email: claims.email || null,
-        name: claims.name || claims["cognito:username"] || null,
+        email: claimAsString(claims.email) || null,
+        name: claimAsString(claims.name) || claimAsString(claims["cognito:username"]) || null,
       },
     });
   } catch (error: any) {
