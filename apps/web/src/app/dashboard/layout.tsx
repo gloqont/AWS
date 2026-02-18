@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { clearAuthToken, getCognitoLogoutUrl } from "@/lib/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const nav = [
@@ -32,9 +31,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.location.href = "/dashboard/portfolio-optimizer";
   }
 
-  function logout() {
-    clearAuthToken();
-    window.location.href = getCognitoLogoutUrl();
+  async function logout() {
+    const res = await fetch("/api/auth/logout", { method: "POST" });
+    const payload = await res.json().catch(() => ({}));
+    window.location.href = payload.logoutUrl || "/login";
   }
 
   return (

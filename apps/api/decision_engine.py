@@ -792,6 +792,13 @@ class RealLifeDecision:
         primary_asset = all_actions[0][1] if all_actions else "MULTIPLE"
         total_change = sum(float(action[2]) for action in all_actions)
 
+        if action_type == "sell":
+            key_lesson = "Selling locks in gains/losses, but you miss future moves."
+        elif action_type == "buy":
+            key_lesson = "Buying increases your exposure to the stock's ups and downs."
+        else:
+            key_lesson = "Any trade changes your portfolio risk."
+
         return {
             "asset": primary_asset,
             "before_weight": 0.0,  # Placeholder - in multi-asset, individual before weights vary
@@ -2068,7 +2075,7 @@ class RealLifeDecision:
             "risk_explanation": risk_explanation,
             "opportunity_cost": opportunity_cost,
             "simple_language_explanation": f"This {action_type} decision means you're changing how much of {asset_symbol} you own. This affects how much money you could make OR lose if the stock price changes.",
-            "key_lesson": f"As a new trader, remember: {f'Selling locks in gains/losses, but you miss future moves.' if action_type == 'sell' else 'Buying increases your exposure to the stock\'s ups and downs.' if action_type == 'buy' else 'Any trade changes your portfolio risk.'}"
+            "key_lesson": f"As a new trader, remember: {key_lesson}"
         }
 
     def _generate_rebalancing_consequences(self, decision_text: str, consequences: DecisionConsequences, action_type: str) -> Dict[str, Any]:

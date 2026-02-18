@@ -8,7 +8,7 @@ export default function Home() {
     redirect("/dashboard/portfolio-optimizer");
   }
 
-  const token = cookies().get("gloqont_auth_token")?.value;
+  const token = cookies().get("gloqont_id_token")?.value || cookies().get("gloqont_auth_token")?.value;
   if (token) {
     redirect("/dashboard/portfolio-optimizer");
   }

@@ -12,7 +12,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get("gloqont_auth_token")?.value;
+  const token = req.cookies.get("gloqont_id_token")?.value || req.cookies.get("gloqont_auth_token")?.value;
   const isAuthed = Boolean(token);
   const { pathname } = req.nextUrl;
 
