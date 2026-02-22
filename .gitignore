@@ -19,3 +19,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+apps/api/.venv/
+apps/api/.venv_check/
+data/cache/
+*.log
+
+apps/api/.venv/
+data/cache/
+*.log
