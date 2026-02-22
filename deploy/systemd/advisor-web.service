@@ -1,0 +1,18 @@
+[Unit]
+Description=GLOQONT Web (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/gloqont/apps/web
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/gloqont/apps/web/.env.local
+ExecStart=/usr/bin/env npm run start
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

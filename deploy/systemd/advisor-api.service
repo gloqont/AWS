@@ -1,0 +1,17 @@
+[Unit]
+Description=GLOQONT API (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/gloqont/apps/api
+EnvironmentFile=/opt/gloqont/apps/api/.env
+ExecStart=/opt/gloqont/apps/api/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

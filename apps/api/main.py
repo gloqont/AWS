@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel, Field, field_validator
+import traceback
+from fastapi.responses import JSONResponse
 
 from risk import fetch_prices, portfolio_metrics, periods_per_year_from_interval
 from decision_engine import DecisionConsequences, RealLifeDecision, UserViewAdapter, UserType
@@ -25,12 +27,24 @@ from guardrails import INPUT_VALIDATOR
 from asset_resolver import ASSET_RESOLVER, AssetInfo
 from enhanced_decision_classifier import ENHANCED_DECISION_CLASSIFIER, DecisionCategory
 
+# NEW: Decision Intelligence Architecture imports
+from decision_schema import (
+    StructuredDecision, DecisionComparison, DecisionScore, DecisionVerdict,
+    InstrumentAction, Timing, Direction, DecisionType, TimingType
+)
+from intent_parser import parse_decision, IntentParser
+from temporal_engine import run_decision_intelligence, run_decision_intelligence_fast, TemporalSimulationEngine, calculate_execution_context, calculate_risk_analysis, calculate_projections
+from decision_cache import get_cached_result, set_cached_result, get_cache_stats
+from tax_engine import TaxEngine, TaxProfile, PortfolioTaxContext, AssetClass, AccountType, HoldingPeriod, IncomeTier, FilingStatus
+from tax_engine.models import TransactionDetail
+
 load_dotenv()
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
 
 serializer = URLSafeTimedSerializer(SESSION_SECRET)
 SESSION_COOKIE = "advisor_session"
@@ -42,7 +56,20 @@ DECISIONS_PATH = os.path.join(DATA_DIR, "decisions.json")  # ✅
 TAX_RULES_PATH = os.path.join(DATA_DIR, "tax_rules.json")  # ✅
 PROFILES_PATH = os.path.join(DATA_DIR, "user_profiles.json")
 
-app = FastAPI(title="Advisor Dashboard API", version="1.4.0")  # bump version
+# ── In-memory price cache for instant refetches ──
+_PRICE_CACHE: Dict[str, Any] = {}  # key -> {"data": ..., "ts": float}
+_PRICE_CACHE_TTL = 300  # 5 minutes
+
+def _get_cached_prices(cache_key: str):
+    entry = _PRICE_CACHE.get(cache_key)
+    if entry and (time.time() - entry["ts"]) < _PRICE_CACHE_TTL:
+        return entry["data"]
+    return None
+
+def _set_cached_prices(cache_key: str, data: Any):
+    _PRICE_CACHE[cache_key] = {"data": data, "ts": time.time()}
+
+app = FastAPI(title="GLOQONT API", version="1.4.0")  # bump version
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,6 +129,10 @@ class AnalyzeIn(BaseModel):
     positions: List[PositionIn]
     lookback_days: int = 365
     interval: Literal["1d", "1wk", "1mo"] = "1d"
+    # NEW: Monte Carlo path generation for future risk visualization
+    horizon_days: int = Field(default=90, ge=1, le=3650, description="Simulation horizon in days")
+    n_paths: int = Field(default=1000, ge=10, le=5000, description="Number of Monte Carlo paths")
+    include_paths: bool = Field(default=False, description="If True, return simulation paths")
 
 
 # ✅ Decision / Scenario Simulation models
@@ -109,6 +140,22 @@ class DecisionAnalyzeIn(BaseModel):
     decision_text: str = Field(..., min_length=3, max_length=400)
     tax_country: str = Field(default="United States")
     user_type: UserType = Field(default=UserType.RETAIL)  # NEW: User type for canonical output
+
+
+
+class DecisionSimulationIn(BaseModel):
+    decision_text: str = Field(..., min_length=3, max_length=400)
+    mode: Literal["fast", "full"] = "fast"
+    horizon_days: int = Field(default=30, ge=1, le=3650)
+    n_paths: int = Field(default=100, ge=10, le=1000)
+    return_paths: bool = Field(default=False, description="Return raw simulation paths")
+    # Tax Engine fields
+    tax_jurisdiction: str = Field(default="US", description="ISO country code: US, IN, CA, DE, FR, GB, NL")
+    tax_sub_jurisdiction: Optional[str] = Field(default=None, description="State/Province: CA, NY, TX, ON, QC, etc.")
+    tax_account_type: str = Field(default="taxable", description="Account type: taxable, ira_roth, 401k, tfsa, isa, etc.")
+    tax_holding_period: str = Field(default="short_term", description="Simulated holding: short_term or long_term")
+    tax_income_tier: str = Field(default="medium", description="Income tier: low, medium, high, very_high")
+    tax_filing_status: str = Field(default="single", description="Filing status: single, married_joint, etc.")
 
 
 class DecisionOut(BaseModel):
@@ -144,6 +191,8 @@ class ScenarioIn(BaseModel):
     decision_type: str = Field(default="rebalance")  # NEW: "trade" or "rebalance"
     magnitude: int = Field(default=5)
     mode: str = Field(default="Compounding Mode")
+    horizon_days: int = Field(default=90, ge=1, le=3650)
+    n_paths: int = Field(default=1000, ge=10, le=5000)
 
 
 class ScenarioOut(BaseModel):
@@ -206,6 +255,55 @@ class TaxAdviceOut(BaseModel):
     items: List[TaxAdviceItem]
 
     visualization_data: Optional[Dict[str, Any]] = None
+
+
+# ----------------------------
+# NEW: Decision Intelligence API Models
+# ----------------------------
+class DecisionIntelligenceIn(BaseModel):
+    """Input for the Decision Intelligence endpoint."""
+    decision_text: str = Field(..., min_length=3, max_length=500, description="User's natural language decision")
+    horizon_days: int = Field(default=30, ge=1, le=3650, description="Simulation horizon in days")
+    n_paths: int = Field(default=100, ge=10, le=1000, description="Number of Monte Carlo paths")
+    include_paths: bool = Field(default=False, description="If True, return raw simulation paths for visualization")
+
+
+class DecisionIntelligenceOut(BaseModel):
+    """Output from the Decision Intelligence endpoint."""
+    ok: bool
+    
+    # Parsed decision
+    decision_id: str
+    decision_type: str
+    parsed_actions: List[Dict[str, Any]]
+    confidence_score: float
+    parser_warnings: List[str] = Field(default_factory=list)
+    
+    # Comparison metrics (baseline vs scenario)
+    baseline_expected_return: float
+    baseline_volatility: float
+    baseline_max_drawdown: float
+    
+    scenario_expected_return: float
+    scenario_volatility: float
+    scenario_max_drawdown: float
+    
+    delta_return: float
+    delta_volatility: float
+    delta_drawdown: float
+    
+    # Decision verdict
+    verdict: str
+    composite_score: float
+    summary: str
+    key_factors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    
+    # For visualization
+    visualization_data: Optional[Dict[str, Any]] = None
+    
+    # Optional: Raw simulation paths for advanced visualization
+    simulation_paths: Optional[Dict[str, Any]] = None
 
 
 # ----------------------------
@@ -320,9 +418,19 @@ def validate_portfolio(p: PortfolioBase, tolerance: float = 0.01) -> ValidationO
 # Auth helpers
 # ----------------------------
 def require_admin(request: Request):
-    # Bypass auth checks in development: always return a fake admin user.
-    # This allows the frontend to call API endpoints without performing login.
-    return {"role": "admin", "sub": "admin"}
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except BadSignature:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    if data.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return data
 
 
 # ----------------------------
@@ -344,7 +452,7 @@ def login(body: LoginIn, response: Response):
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
-        secure=False,
+        secure=SESSION_COOKIE_SECURE,
         samesite="lax",
         max_age=SESSION_MAX_AGE_SECONDS,
         path="/",
@@ -407,48 +515,6 @@ def portfolio_current(request: Request):
     if not items:
         return {"ok": True, "portfolio": None}
     return {"ok": True, "portfolio": items[0]}
-
-
-@app.post("/api/v1/portfolio/risk-object")
-def portfolio_risk_object(request: Request, body: PortfolioIn):
-    require_admin(request)
-
-    v = validate_portfolio(body)
-    if not v.ok:
-        raise HTTPException(
-            status_code=400,
-            detail={"errors": v.errors, "warnings": v.warnings, "sum_weights": v.sum_weights},
-        )
-
-    max_position = {"LOW": 0.20, "MEDIUM": 0.35, "HIGH": 0.60}[body.risk_budget]
-
-    risk_obj = {
-        "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "risk_budget": body.risk_budget,
-        "portfolio_value": float(body.total_value),
-        "base_currency": body.base_currency,
-        "positions": [{"ticker": p.ticker, "weight": round(p.weight / 100.0, 6)} for p in body.positions],
-        "constraints": {
-            "fully_invested": True,
-            "long_only": True,
-            "max_position": max_position,
-            "min_position": 0.0,
-        },
-        "risk_assumptions": {
-            "horizon_days": 30,
-            "return_model": "HISTORICAL_PLACEHOLDER",
-            "vol_model": "STATIC_PLACEHOLDER",
-            "corr_model": "STATIC_PLACEHOLDER",
-        },
-        "diagnostics": {"sum_weights": round(v.sum_weights / 100.0, 6), "warnings": v.warnings},
-        "decision_log": [
-            {
-                "event": "PORTFOLIO_INTERPRETED",
-                "note": "V1 interprets inputs into a risk object contract.",
-            }
-        ],
-    }
-    return {"ok": True, "risk_object": risk_obj}
 
 
 # ----------------------------
@@ -519,7 +585,7 @@ def user_profile_save(request: Request, body: dict):
 # Market helpers (search)
 # ----------------------------
 @app.get("/api/v1/market/search")
-def market_search(request: Request, q: str):
+def market_search(request: Request, q: str, country: str = "US"):
     require_admin(request)
     if not q or not q.strip():
         raise HTTPException(status_code=400, detail="query required")
@@ -535,53 +601,49 @@ def market_search(request: Request, q: str):
             "currency": "INR" if asset_info.country == "India" else "USD",
         }
 
-    # Then try the original Yahoo Finance search
-    url = f"https://query1.finance.yahoo.com/v1/finance/search?q={q}&quotesCount=6&newsCount=0"
-    try:
-        r = httpx.get(url, timeout=10.0)
-        r.raise_for_status()
-        data = r.json()
-        quotes = data.get("quotes", [])
-        # pick the first equity-like symbol
-        for qitem in quotes:
-            typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
-            if (typ and "EQUITY" in str(typ).upper()) or qitem.get("symbol"):
-                return {
-                    "ok": True,
-                    "symbol": qitem.get("symbol"),
-                    "shortname": qitem.get("shortname") or qitem.get("longname"),
-                    "exchange": qitem.get("exchange"),
-                    "currency": qitem.get("currency"),
-                }
-    except Exception:
-        pass
+    # Prioritize suffix based on country
+    prioritized_suffix = ""
+    if country == "IN":
+        prioritized_suffix = ".NS"
+    elif country == "CA":
+        prioritized_suffix = ".TO"
+    elif country == "GB":
+        prioritized_suffix = ".L"
+    elif country == "DE":
+        prioritized_suffix = ".DE"
+    elif country == "FR":
+        prioritized_suffix = ".PA"
+    
+    # OPTIMIZED: Only try the prioritized suffix + raw query (max 2 calls instead of ~12)
+    queries_to_try = []
+    if prioritized_suffix and not q.upper().endswith(prioritized_suffix):
+        queries_to_try.append(f"{q}{prioritized_suffix}")
+    queries_to_try.append(q)
 
-    # If the original search fails, try with common international suffixes
-    international_suffixes = [".NS", ".BO", ".JK", ".SI", ".HK", ".TO", ".L", ".PA", ".DE", ".MI"]
-    base_query = q.rstrip('.NS').rstrip('.BO').rstrip('.JK').rstrip('.SI').rstrip('.HK').rstrip('.TO').rstrip('.L').rstrip('.PA').rstrip('.DE').rstrip('.MI')
+    for test_query in queries_to_try:
+        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={test_query}&quotesCount=1&newsCount=0"
+        try:
+            r = httpx.get(url, timeout=3.0)
+            r.raise_for_status()
+            data = r.json()
+            quotes = data.get("quotes", [])
+            for qitem in quotes:
+                typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
+                sym = qitem.get("symbol", "")
+                
+                if country == "IN" and not (sym.endswith(".NS") or sym.endswith(".BO")):
+                    continue
 
-    for suffix in international_suffixes:
-        if not q.endswith(suffix):
-            test_query = f"{base_query}{suffix}"
-            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={test_query}&quotesCount=6&newsCount=0"
-            try:
-                r = httpx.get(url, timeout=10.0)
-                r.raise_for_status()
-                data = r.json()
-                quotes = data.get("quotes", [])
-                # pick the first equity-like symbol
-                for qitem in quotes:
-                    typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
-                    if (typ and "EQUITY" in str(typ).upper()) or qitem.get("symbol"):
-                        return {
-                            "ok": True,
-                            "symbol": qitem.get("symbol"),
-                            "shortname": qitem.get("shortname") or qitem.get("longname"),
-                            "exchange": qitem.get("exchange"),
-                            "currency": qitem.get("currency"),
-                        }
-            except Exception:
-                continue
+                if (typ and "EQUITY" in str(typ).upper()) or sym:
+                    return {
+                        "ok": True,
+                        "symbol": sym,
+                        "shortname": qitem.get("shortname") or qitem.get("longname"),
+                        "exchange": qitem.get("exchange"),
+                        "currency": qitem.get("currency"),
+                    }
+        except Exception:
+            continue
 
     raise HTTPException(status_code=404, detail="No ticker found")
 
@@ -674,6 +736,252 @@ def analyze_decision_text(text: str, portfolio: Dict[str, Any]) -> str:
             return p.get("ticker")
     # fallback: macro
     return "Macro / Multi-Asset"
+
+
+@app.post("/api/v1/decision/parse")
+def decision_parse(request: Request, body: DecisionAnalyzeIn):
+    """
+    Interpretation Layer Endpoint.
+    Propagates the strict JSON parsing and validation to the UI.
+    Matching User Requirement: Input Interpretation Layer
+    """
+    require_admin(request)
+    
+    # Load portfolio for context-aware parsing
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    portfolio = pitems[0] if pitems else None
+    
+    # Parse (Hybrid: Heuristic -> LLM -> Validation)
+    decision = parse_decision(body.decision_text, portfolio)
+    
+    return {"ok": True, "decision": decision.dict()}
+
+
+@app.post("/api/v1/decision/simulate")
+def decision_simulate(request: Request, body: DecisionSimulationIn):
+    """
+    Simulation & Intelligence Layer Endpoint.
+    Orchestrates the full flow: Parse -> Simulate -> Score -> Explain.
+    Returns Universal Output Blueprint data.
+    """
+    require_admin(request)
+    
+    try:
+        # Load portfolio
+        pstore = read_portfolios()
+        pitems = pstore.get("items", [])
+        portfolio = pitems[0] if pitems else None
+        
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="No portfolio found")
+            
+        # 1. Parse Decision (Interpretation Layer)
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        # 1.5. Pre-process Decision: Resolve Shares -> USD
+        # We need real prices to convert "10 shares" -> "$2000" -> "2%"
+        all_symbols = tuple(decision.get_all_symbols())
+        if all_symbols:
+            try:
+                price_result = fetch_prices(tickers=all_symbols, lookback_days=5, cache_ttl_seconds=300)
+                latest_prices = {t: price_result.prices[t].iloc[-1] for t in all_symbols if t in price_result.prices}
+                
+                for action in decision.actions:
+                    if action.symbol in latest_prices:
+                        price = float(latest_prices[action.symbol])
+                        if action.size_shares is not None:
+                            action.size_usd = action.size_shares * price
+                            # Clearing size_percent to force recalculation based on USD
+                            action.size_percent = None 
+            except Exception as e:
+                print(f"Price fetch warning in pre-process: {e}")
+
+        # 2. Run Intelligence Engine (Simulation Layer)
+        if body.mode == "fast":
+            comparison, score = run_decision_intelligence_fast(
+                portfolio, decision, body.horizon_days
+            )
+            base_paths, scen_paths = None, None
+        else:
+            comparison, score, base_paths, scen_paths = run_decision_intelligence(
+                portfolio, decision, body.horizon_days, body.n_paths, body.return_paths
+            )
+        
+        # 3. Calculate Execution Context (Section 2)
+        execution_context = calculate_execution_context(portfolio, decision)
+        
+        # 4. Calculate Risk Analysis (Sections 6-10)
+        risk_analysis = calculate_risk_analysis(
+            portfolio, decision, comparison, scen_paths, body.horizon_days
+        )
+        
+            
+        # 5. Calculate Projections (NEW)
+        projections = {}
+        if scen_paths:
+            projections = calculate_projections(scen_paths)
+        else:
+            # Fallback for fast mode: Approximate using annual return
+            r = comparison.scenario_expected_return / 100.0
+            projections = {
+                "1M": r * (30/365),
+                "3M": r * (90/365),
+                "6M": r * (180/365),
+                "1Y": r
+            }
+
+        # 6. Tax Engine Calculation (Institutional-Grade)
+        tax_analysis = None
+        try:
+            tax_engine = TaxEngine()
+            
+            # Build TaxProfile from request
+            tax_profile = TaxProfile(
+                jurisdiction=body.tax_jurisdiction,
+                sub_jurisdiction=body.tax_sub_jurisdiction,
+                filing_status=FilingStatus(body.tax_filing_status) if body.tax_filing_status else FilingStatus.SINGLE,
+                income_tier=IncomeTier(body.tax_income_tier) if body.tax_income_tier else IncomeTier.MEDIUM,
+            )
+            
+            # Build PortfolioTaxContext
+            portfolio_tax_ctx = PortfolioTaxContext(
+                account_type=AccountType(body.tax_account_type) if body.tax_account_type else AccountType.TAXABLE,
+                holding_period=HoldingPeriod(body.tax_holding_period) if body.tax_holding_period else HoldingPeriod.SHORT_TERM,
+                total_portfolio_value_usd=portfolio.get("total_value", 100000),
+                estimated_gain_percent=20.0, # Default assumption for simulations
+            )
+            
+            # Build TransactionDetails from decision actions
+            transactions = []
+            for action in decision.actions:
+                # Include ALL actions (Buy/Sell) so the engine can report "No Tax" for buys
+                # Calculate transaction value
+                txn_value = 0.0
+                if action.size_usd:
+                    txn_value = action.size_usd
+                elif action.size_percent:
+                    txn_value = (action.size_percent / 100.0) * portfolio.get("total_value", 100000)
+                else:
+                    txn_value = portfolio.get("total_value", 100000) * 0.05  # Default 5%
+                
+                asset_class = tax_engine.classify_asset(action.symbol, portfolio)
+                
+                # Determine estimated gain/loss for SELLs
+                est_gain = None
+                direction_str = getattr(action.direction, 'value', str(action.direction)).lower()
+                if direction_str in ["sell", "liquidate", "reduce", "short"]:
+                     # For simulation, assume a default gain % (e.g. 20%) if we can't look up lots
+                     est_gain = txn_value * 0.20
+                elif direction_str in ["buy", "long", "add", "increase"] and comparison:
+                     # For BUY, calculate EXPECTED future gain based on simulation return
+                     # This allows "Projected Realization Tax" to be shown
+                     proj_return = comparison.scenario_expected_return  # This is in percent (e.g. 7.09 means 7.09%)
+                     if proj_return > 0:
+                         est_gain = txn_value * (proj_return / 100.0)  # Convert percent to ratio
+                     print(f"DEBUG TAX BUY: direction={direction_str}, proj_return={proj_return}%, txn_value={txn_value}, est_gain={est_gain}")
+                
+                transactions.append(TransactionDetail(
+                    symbol=action.symbol,
+                    direction=getattr(action.direction, 'value', str(action.direction)),
+                    transaction_value_usd=txn_value,
+                    asset_class=asset_class,
+                    estimated_gain_usd=est_gain,
+                ))
+            
+            # Always run tax engine, even if empty (returns "no impact")
+            if transactions:
+                tax_impact = tax_engine.calculate(tax_profile, portfolio_tax_ctx, transactions)
+                tax_analysis = tax_impact.dict()
+            else:
+                # Edge case: No actions at all
+                tax_analysis = None
+        except Exception as tax_err:
+            print(f"TAX ENGINE WARNING: {tax_err}")
+            tax_analysis = {"error": str(tax_err), "summary": "Tax calculation failed"}
+
+        # 7. Generate Visualization Data (Canonical Interface)
+        # We need to instantiate the canonical objects to get standard visualizations
+        try:
+            # Create consequences engine
+            consequences = DecisionConsequences(
+                portfolio_data=portfolio,
+                decision_text=body.decision_text,
+                decision_category=decision.decision_type
+            )
+            
+            # Create canonical decision wrapper
+            real_life_decision = RealLifeDecision(
+                decision_consequences=consequences,
+                decision_text=body.decision_text,
+                portfolio_data=portfolio
+            )
+            
+            # Extract visualization data
+            visualization_data = real_life_decision.visualization_data
+        except Exception as viz_err:
+            print(f"VIZ GENERATION WARNING: {viz_err}")
+            traceback.print_exc()
+            visualization_data = None
+
+        # 8. Compute Tax Metrics (Pre-Tax vs After-Tax comparison)
+        tax_metrics = None
+        if tax_analysis and not tax_analysis.get("error"):
+            try:
+                tax_drag_pct = tax_analysis.get("effective_tax_rate", 0.0) / 100.0
+                # Conversion: Temporal Engine returns Percentages (e.g. 5.0 for 5%)
+                # Frontend expects Decimals (e.g. 0.05 for 5%) for this specific TaxMetrics table
+                scenario_ret = (comparison.scenario_expected_return if comparison else 0) / 100.0
+                
+                scenario_dd = (comparison.scenario_max_drawdown if comparison else 0) / 100.0
+                scenario_tail = (comparison.scenario_tail_loss if comparison else 0) / 100.0
+
+                tax_metrics = {
+                    "expected_return_pre": round(scenario_ret, 4),
+                    "expected_return_post": round(scenario_ret * (1 - tax_drag_pct), 4),
+                    "max_drawdown_pre": round(scenario_dd, 4),
+                    "max_drawdown_post": round(scenario_dd - (tax_drag_pct * abs(scenario_dd) * 0.5), 4),
+                    "tail_loss_pre": round(scenario_tail, 4),
+                    "tail_loss_post": round(scenario_tail - (tax_drag_pct * abs(scenario_tail) * 0.5), 4),
+                }
+            except Exception:
+                tax_metrics = None
+
+        # Exit assumptions from horizon context
+        exit_assumptions = None
+        if tax_analysis and not tax_analysis.get("error"):
+            hp = body.tax_holding_period or "short_term"
+            exit_assumptions = {
+                "trigger": "Scenario Simulation Exit",
+                "holding_period_days": body.horizon_days,
+                "tax_regime": tax_analysis.get("tax_regime_applied", hp.replace("_", " ").title()),
+            }
+            # Attach to tax_analysis too
+            tax_analysis["exit_assumptions"] = exit_assumptions
+
+        # 9. Construct Response (Universal Output Blueprint)
+        return {
+            "ok": True,
+            "decision": decision.dict(),
+            "comparison": comparison.dict(),
+            "score": score.dict(),
+            "execution_context": execution_context.dict(),
+            "risk_analysis": risk_analysis.dict(),
+            "baseline_paths": [p.dict() for p in base_paths] if base_paths else None,
+            "scenario_paths": [p.dict() for p in scen_paths] if scen_paths else None,
+            "projections": projections,
+            "tax_analysis": tax_analysis,
+            "tax_metrics": tax_metrics,
+            "visualization_data": visualization_data,
+            "mode": body.mode
+        }
+    except Exception as e:
+        print(f"SIMULATION ERROR: {str(e)}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500, 
+            content={"message": f"Simulation failed: {str(e)}", "traceback": traceback.format_exc()}
+        )
 
 
 def consequence_engine(target: str, magnitude: int, portfolio: Dict[str, Any], total_value: float, mode: str) -> Dict[str, Any]:
@@ -910,7 +1218,11 @@ def scenario_run(request: Request, body: ScenarioIn):
         if total_weight > 0:
             for pos in current_positions:
                 ticker = pos.get("ticker")
-                weight = (pos.get("weight", 0) * 100) / total_weight * 100  # Normalize to 100%
+                # Normalize only if rebalancing
+                if body.decision_type == "rebalance":
+                    weight = (pos.get("weight", 0) * 100) / total_weight * 100
+                else:
+                    weight = pos.get("weight", 0) * 100
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
         else:
             # Fallback if total weight is 0
@@ -920,8 +1232,9 @@ def scenario_run(request: Request, body: ScenarioIn):
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
 
         # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
+        # Only enforce for rebalance
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1173,7 +1486,9 @@ def scenario_run(request: Request, body: ScenarioIn):
         # Normalize all weights to sum to 100% after the decision
         # This handles the case where the raw sum doesn't equal 100% due to the allocation change
         total_raw_weight = sum(pos["weight_pct"] for pos in new_positions)
-        if total_raw_weight > 0 and abs(total_raw_weight - 100.0) > 0.1:  # Only normalize if significantly different
+        
+        # Only normalize if rebalancing
+        if body.decision_type == "rebalance" and total_raw_weight > 0 and abs(total_raw_weight - 100.0) > 0.1:  # Only normalize if significantly different
             normalized_positions = []
             for pos in new_positions:
                 normalized_weight = (pos["weight_pct"] / total_raw_weight) * 100.0
@@ -1181,8 +1496,9 @@ def scenario_run(request: Request, body: ScenarioIn):
             new_positions = normalized_positions
 
         # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
+        # Only enforce for rebalance
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1335,7 +1651,11 @@ def scenario_run(request: Request, body: ScenarioIn):
         if total_weight > 0:
             for pos in current_positions:
                 ticker = pos.get("ticker")
-                weight = (pos.get("weight", 0) * 100) / total_weight * 100  # Normalize to 100%
+                # Normalize only if rebalancing
+                if body.decision_type == "rebalance":
+                    weight = (pos.get("weight", 0) * 100) / total_weight * 100
+                else:
+                    weight = pos.get("weight", 0) * 100
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
         else:
             # Fallback if total weight is 0
@@ -1358,7 +1678,8 @@ def scenario_run(request: Request, body: ScenarioIn):
     # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
     if new_positions:
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        # Only enforce for rebalance
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1769,6 +2090,121 @@ def scenario_run(request: Request, body: ScenarioIn):
             "irreversible_loss_heatmap": irreversible_loss_heatmap,
             "decision_summary_line": decision_summary_line
         }
+
+
+# ----------------------------
+# NEW: Unified Scenario Endpoint (combines Classic + AI)
+# ----------------------------
+class UnifiedScenarioIn(BaseModel):
+    """Input for the unified scenario endpoint."""
+    decision_text: str = Field(..., min_length=3, max_length=400)
+    tax_country: str = Field(default="United States")
+    decision_type: str = Field(default="rebalance")
+    magnitude: int = Field(default=5)
+    mode: str = Field(default="Compounding Mode")
+    horizon_days: int = Field(default=30, ge=1, le=365)
+
+
+class UnifiedScenarioOut(BaseModel):
+    """Output from the unified scenario endpoint."""
+    ok: bool
+    
+    # Classic simulation results
+    classic: Dict[str, Any]
+    
+    # AI verdict (simplified for beginners)
+    ai_verdict: Dict[str, Any]
+
+
+@app.post("/api/v1/scenario/unified", response_model=UnifiedScenarioOut)
+def scenario_unified(request: Request, body: UnifiedScenarioIn):
+    """
+    Unified Scenario Simulation: Combines Classic analysis with AI Decision Intelligence.
+    
+    Returns both:
+    1. Classic simulation (detailed text-based analysis)
+    2. AI verdict (simplified score and recommendation)
+    """
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
+    portfolio = pitems[0]
+    
+    # Build ScenarioIn for classic simulation
+    classic_body = ScenarioIn(
+        decision_text=body.decision_text,
+        tax_country=body.tax_country,
+        decision_type=body.decision_type,
+        magnitude=body.magnitude,
+        mode=body.mode
+    )
+    
+    # Run classic simulation (reuse existing logic)
+    try:
+        # Create a mock request object to call scenario_run
+        classic_result = scenario_run(request, classic_body)
+    except HTTPException as e:
+        classic_result = {"ok": False, "error": str(e.detail)}
+    except Exception as e:
+        classic_result = {"ok": False, "error": str(e)}
+    
+    # Run AI Decision Intelligence
+    ai_verdict = {
+        "verdict": "neutral",
+        "composite_score": 50.0,
+        "summary": "Unable to analyze decision.",
+        "recommendation": "Review the decision details.",
+    }
+    
+    try:
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if decision.actions:
+            comparison, score, _, _ = run_decision_intelligence(
+                portfolio=portfolio,
+                decision=decision,
+                horizon_days=body.horizon_days,
+                n_paths=50,  # Use fewer paths for speed
+                include_paths=False
+            )
+            
+            # Simplify AI output for beginners
+            verdict_text = score.verdict.value.replace("_", " ").title()
+            
+            # Map verdict to beginner-friendly recommendation
+            if score.composite_score >= 70:
+                recommendation = "✅ This looks like a good decision for your portfolio."
+            elif score.composite_score >= 55:
+                recommendation = "👍 This decision seems reasonable, but monitor closely."
+            elif score.composite_score >= 45:
+                recommendation = "⚖️ This decision has mixed impacts. Consider your goals."
+            elif score.composite_score >= 30:
+                recommendation = "⚠️ This decision may increase your portfolio risk."
+            else:
+                recommendation = "🛑 Caution: This decision significantly increases risk."
+            
+            ai_verdict = {
+                "verdict": verdict_text,
+                "composite_score": round(score.composite_score, 1),
+                "summary": score.summary,
+                "recommendation": recommendation,
+                "delta_return": round(comparison.delta_return, 2),
+                "delta_volatility": round(comparison.delta_volatility, 2),
+                "key_factors": score.key_factors[:3],  # Top 3 factors
+                "warnings": score.warnings[:2],  # Top 2 warnings
+            }
+    except Exception as e:
+        ai_verdict["error"] = str(e)
+    
+    return UnifiedScenarioOut(
+        ok=True,
+        classic=classic_result if isinstance(classic_result, dict) else classic_result.dict(),
+        ai_verdict=ai_verdict,
+    )
 
 
 def validate_strict_output_contract_with_portfolio(
@@ -2392,6 +2828,13 @@ def market_prices(
     raw = [t for t in tickers.split(",")]
     tlist = _sanitize_tickers(raw)
     warnings: List[str] = []
+    
+    # Check in-memory cache first for instant response
+    cache_key = f"prices:{','.join(sorted(tlist))}:{lookback}:{interval}"
+    cached = _get_cached_prices(cache_key)
+    if cached is not None:
+        return cached
+    
     data = None
     try:
         if not tlist:
@@ -2409,14 +2852,39 @@ def market_prices(
             "prices_tail": {"index": [], "values": {}},
             "warnings": warnings,
         }
-        return {"ok": True, "data": out}
+        result = {"ok": True, "data": out}
+        return result
 
     tail = data.prices.tail(25)
+    
+    # NEW: Resolve currencies for each ticker
+    currencies = {}
+    for t in tlist:
+        # Default to USD
+        currencies[t] = "USD"
+        try:
+            info = ASSET_RESOLVER.resolve_asset(t)
+            if info:
+                if info.country == "India":
+                    currencies[t] = "INR"
+                elif info.country == "USA":
+                    currencies[t] = "USD"
+                elif info.country == "Canada":
+                    currencies[t] = "CAD"
+                elif info.country == "UK" or info.country == "United Kingdom":
+                    currencies[t] = "GBP"
+                elif info.country in ["Germany", "France", "Italy", "Spain", "Netherlands"]:
+                    currencies[t] = "EUR"
+                # Add more mappings as needed
+        except Exception:
+            pass
+
     out = {
         "tickers": tlist,
         "interval": interval,
         "lookback_days": lookback,
         "rows_returned": int(tail.shape[0]),
+        "currencies": currencies, # NEW field
         "prices_tail": {
             "index": [str(x) for x in tail.index],
             "values": {c: [float(v) for v in tail[c].values] for c in tail.columns},
@@ -2424,7 +2892,9 @@ def market_prices(
     }
     if warnings:
         out["warnings"] = warnings
-    return {"ok": True, "data": out}
+    result = {"ok": True, "data": out}
+    _set_cached_prices(cache_key, result)
+    return result
 
 
 def _is_finite(x: float) -> bool:
@@ -2581,11 +3051,61 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
                 "Max drawdown is computed on the portfolio index built from historical returns.",
             ],
         }
-        return {"ok": True, "analysis": out}
+        
+        # Generate Monte Carlo paths for all 4 time horizons using portfolio volatility
+        if body.include_paths:
+            try:
+                # Use the computed portfolio volatility from the output
+                annual_vol = out["annualized_vol"]  # Already a float
+                daily_vol = annual_vol / np.sqrt(252)  # Convert to daily
+                daily_drift = 0.0001  # Small positive drift (approx 2.5% annual)
+                
+                horizons = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}
+                all_horizon_paths = {}
+                n_paths = body.n_paths  # Use requested paths (default 1000)
+                initial_value = 100000.0
+                
+                for horizon_name, horizon_days in horizons.items():
+                    # Vectorized Monte Carlo Simulation
+                    # Generate all random returns at once: (n_paths, horizon_days)
+                    # This is much faster than looping
+                    daily_returns = np.random.normal(daily_drift, daily_vol, (n_paths, horizon_days))
+                    
+                    # Compute cumulative return factor for each path
+                    # (1 + r1) * (1 + r2) * ... 
+                    cum_returns = np.prod(1 + daily_returns, axis=1)
+                    
+                    # Compute terminal values
+                    terminal_values = initial_value * cum_returns
+                    
+                    # Compute terminal returns percentage
+                    path_returns = (terminal_values - initial_value) / initial_value * 100
+                    
+                    # Calculate statistics on the array
+                    all_horizon_paths[horizon_name] = {
+                        "horizon_days": int(horizon_days),
+                        "n_paths": int(n_paths),
+                        "best_case": float(np.max(path_returns)),
+                        "worst_case": float(np.min(path_returns)),
+                        "median": float(np.median(path_returns))
+                    }
+                
+                simulation_paths = all_horizon_paths
+                    
+            except Exception as e:
+                import traceback
+                out["path_generation_error"] = str(e)
+        
+        result = {"ok": True, "analysis": out}
+        if simulation_paths:
+            result["simulation_paths"] = simulation_paths
+        return result
+
     except HTTPException:
         # re-raise FastAPI HTTPExceptions unchanged
         raise
     except Exception as e:
+        import traceback
         tb = traceback.format_exc()
         # return structured 502 to avoid 500 stacktrace leak
         raise HTTPException(
@@ -2594,5 +3114,339 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
         )
 
 
+# ----------------------------
+# NEW: Decision Intelligence Endpoint
+# ----------------------------
+@app.post("/api/v1/decision/evaluate", response_model=DecisionIntelligenceOut)
+def evaluate_decision(request: Request, body: DecisionIntelligenceIn):
+    """
+    Evaluate a natural language decision using the Decision Intelligence Architecture.
+    
+    This endpoint:
+    1. Parses the natural language decision into a StructuredDecision
+    2. Runs Monte Carlo simulation to compare baseline vs. scenario
+    3. Returns counterfactual comparison and decision verdict
+    
+    Example inputs:
+    - "Short Apple 4% after 3 days"
+    - "Buy NVDA 20%"
+    - "Reduce tech exposure"
+    """
+    import traceback
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(
+            status_code=400, 
+            detail="No saved portfolio found. Save a portfolio first."
+        )
+    portfolio = pitems[0]
+    
+    try:
+        # 1. Parse the decision using Intent Parser
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if not decision.actions:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Could not parse decision",
+                    "message": "No actionable items found in the decision text.",
+                    "warnings": decision.warnings,
+                }
+            )
+        
+        # 2. Run temporal simulation
+        comparison, score, baseline_paths, scenario_paths = run_decision_intelligence(
+            portfolio=portfolio,
+            decision=decision,
+            horizon_days=body.horizon_days,
+            n_paths=body.n_paths,
+            return_paths=body.include_paths
+        )
+        
+        # 3. Build response
+        parsed_actions = []
+        for action in decision.actions:
+            parsed_actions.append({
+                "symbol": action.symbol,
+                "direction": getattr(action.direction, 'value', str(action.direction)),
+                "size_percent": action.size_percent,
+                "size_usd": action.size_usd,
+                "timing_type": getattr(action.timing.type, 'value', str(action.timing.type)),
+                "delay_days": action.timing.delay_days,
+            })
+        
+        # 4. Build visualization data
+        visualization_data = {
+            "comparison_chart": {
+                "type": "bar",
+                "labels": ["Expected Return", "Volatility", "Max Drawdown"],
+                "baseline": [
+                    comparison.baseline_expected_return,
+                    comparison.baseline_volatility,
+                    comparison.baseline_max_drawdown
+                ],
+                "scenario": [
+                    comparison.scenario_expected_return,
+                    comparison.scenario_volatility,
+                    comparison.scenario_max_drawdown
+                ],
+            },
+            "score_breakdown": {
+                "type": "radar",
+                "labels": ["Return", "Risk", "Tail Risk", "Drawdown", "Efficiency", "Stability"],
+                "values": [
+                    score.return_score,
+                    score.risk_score,
+                    score.tail_risk_score,
+                    score.drawdown_score,
+                    score.capital_efficiency_score,
+                    score.stability_score,
+                ],
+            },
+            "verdict_gauge": {
+                "value": score.composite_score,
+                "verdict": score.verdict.value,
+            },
+        }
+        
+        # 5. Serialize simulation paths if requested
+        serialized_paths = None
+        if body.include_paths and baseline_paths and scenario_paths:
+            # Serialize paths for frontend visualization
+            # Each path contains a list of states with portfolio values over time
+            def serialize_path(path):
+                return {
+                    "path_id": path.path_id,
+                    "terminal_return_pct": round(path.terminal_return_pct, 2),
+                    "max_drawdown_pct": round(path.max_drawdown_pct, 2),
+                    "values": [round(s.portfolio_value, 2) for s in path.states],
+                    "days": [s.day_offset for s in path.states],
+                }
+            
+            serialized_paths = {
+                "horizon_days": body.horizon_days,
+                "n_paths": body.n_paths,
+                "baseline": [serialize_path(p) for p in baseline_paths],
+                "scenario": [serialize_path(p) for p in scenario_paths],
+            }
+        
+        return DecisionIntelligenceOut(
+            ok=True,
+            decision_id=decision.decision_id,
+            decision_type=decision.decision_type.value,
+            parsed_actions=parsed_actions,
+            confidence_score=decision.confidence_score,
+            parser_warnings=decision.warnings,
+            
+            baseline_expected_return=round(comparison.baseline_expected_return, 2),
+            baseline_volatility=round(comparison.baseline_volatility, 2),
+            baseline_max_drawdown=round(comparison.baseline_max_drawdown, 2),
+            
+            scenario_expected_return=round(comparison.scenario_expected_return, 2),
+            scenario_volatility=round(comparison.scenario_volatility, 2),
+            scenario_max_drawdown=round(comparison.scenario_max_drawdown, 2),
+            
+            delta_return=round(comparison.delta_return, 2),
+            delta_volatility=round(comparison.delta_volatility, 2),
+            delta_drawdown=round(comparison.delta_drawdown, 2),
+            
+            verdict=score.verdict.value,
+            composite_score=round(score.composite_score, 1),
+            summary=score.summary,
+            key_factors=score.key_factors,
+            warnings=score.warnings + decision.warnings,
+            
+            visualization_data=visualization_data,
+            simulation_paths=serialized_paths,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Decision evaluation failed",
+                "message": str(e),
+                "trace": tb,
+            }
+        )
 
 
+# ----------------------------
+# NEW: Fast Decision Evaluation Endpoint (Tier 1)
+# ----------------------------
+@app.post("/api/v1/decision/evaluate/fast", response_model=DecisionIntelligenceOut)
+def evaluate_decision_fast(request: Request, body: DecisionIntelligenceIn):
+    """
+    TIER 1: Fast decision evaluation (~50ms).
+    
+    Uses mean-field approximation for instant results.
+    Good for immediate UX feedback before deep simulation.
+    
+    Returns lower confidence results - use /evaluate for full Monte Carlo.
+    """
+    import traceback
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(
+            status_code=400, 
+            detail="No saved portfolio found. Save a portfolio first."
+        )
+    portfolio = pitems[0]
+    portfolio_id = portfolio.get("id", "unknown")
+    
+    try:
+        # Check cache first
+        cached = get_cached_result(
+            decision_text=body.decision_text,
+            portfolio_id=portfolio_id,
+            horizon_days=body.horizon_days,
+            is_fast=True
+        )
+        
+        if cached:
+            # Return cached result
+            cached["ok"] = True
+            cached["_cached"] = True
+            return DecisionIntelligenceOut(**cached)
+        
+        # Parse the decision
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if not decision.actions:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Could not parse decision",
+                    "message": "No actionable items found in the decision text.",
+                    "warnings": decision.warnings,
+                }
+            )
+        
+        # Run fast approximation (Tier 1)
+        comparison, score = run_decision_intelligence_fast(
+            portfolio=portfolio,
+            decision=decision,
+            horizon_days=body.horizon_days
+        )
+        
+        # Build response
+        parsed_actions = []
+        for action in decision.actions:
+            parsed_actions.append({
+                "symbol": action.symbol,
+                "direction": getattr(action.direction, 'value', str(action.direction)),
+                "size_percent": action.size_percent,
+                "size_usd": action.size_usd,
+                "timing_type": getattr(action.timing.type, 'value', str(action.timing.type)),
+                "delay_days": action.timing.delay_days,
+            })
+        
+        # Build visualization data
+        visualization_data = {
+            "comparison_chart": {
+                "type": "bar",
+                "labels": ["Expected Return", "Volatility", "Max Drawdown"],
+                "baseline": [
+                    comparison.baseline_expected_return,
+                    comparison.baseline_volatility,
+                    comparison.baseline_max_drawdown
+                ],
+                "scenario": [
+                    comparison.scenario_expected_return,
+                    comparison.scenario_volatility,
+                    comparison.scenario_max_drawdown
+                ],
+            },
+            "score_breakdown": {
+                "type": "radar",
+                "labels": ["Return", "Risk", "Tail Risk", "Drawdown", "Efficiency", "Stability"],
+                "values": [
+                    score.return_score,
+                    score.risk_score,
+                    score.tail_risk_score,
+                    score.drawdown_score,
+                    score.capital_efficiency_score,
+                    score.stability_score,
+                ],
+            },
+            "verdict_gauge": {
+                "value": score.composite_score,
+                "verdict": score.verdict.value,
+            },
+            "is_fast_approximation": True,
+        }
+        
+        result_dict = {
+            "ok": True,
+            "decision_id": decision.decision_id,
+            "decision_type": decision.decision_type.value,
+            "parsed_actions": parsed_actions,
+            "confidence_score": decision.confidence_score,
+            "parser_warnings": decision.warnings,
+            
+            "baseline_expected_return": round(comparison.baseline_expected_return, 2),
+            "baseline_volatility": round(comparison.baseline_volatility, 2),
+            "baseline_max_drawdown": round(comparison.baseline_max_drawdown, 2),
+            
+            "scenario_expected_return": round(comparison.scenario_expected_return, 2),
+            "scenario_volatility": round(comparison.scenario_volatility, 2),
+            "scenario_max_drawdown": round(comparison.scenario_max_drawdown, 2),
+            
+            "delta_return": round(comparison.delta_return, 2),
+            "delta_volatility": round(comparison.delta_volatility, 2),
+            "delta_drawdown": round(comparison.delta_drawdown, 2),
+            
+            "verdict": score.verdict.value,
+            "composite_score": round(score.composite_score, 1),
+            "summary": score.summary,
+            "key_factors": score.key_factors,
+            "warnings": score.warnings + decision.warnings,
+            
+            "visualization_data": visualization_data,
+        }
+        
+        # Cache the result
+        set_cached_result(
+            decision_text=body.decision_text,
+            portfolio_id=portfolio_id,
+            horizon_days=body.horizon_days,
+            result=result_dict,
+            is_fast=True
+        )
+        
+        return DecisionIntelligenceOut(**result_dict)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Fast decision evaluation failed",
+                "message": str(e),
+                "trace": tb,
+            }
+        )
+
+
+# ----------------------------
+# Cache Statistics Endpoint
+# ----------------------------
+@app.get("/api/v1/decision/cache/stats")
+def decision_cache_stats(request: Request):
+    """Get decision cache statistics."""
+    require_admin(request)
+    return get_cache_stats()

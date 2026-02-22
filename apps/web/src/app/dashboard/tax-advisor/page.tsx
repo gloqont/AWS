@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useTutorial } from "@/components/tutorial/TutorialContext";
+import { TAX_ADVISOR_TUTORIAL } from "@/components/tutorial/tutorialContent";
+import { useSearchParams } from "next/navigation";
 
 type AdviceItem = {
   title: string;
@@ -48,6 +51,7 @@ function fmtMoney(n: number) {
 }
 
 export default function TaxAdvisorPage() {
+  const searchParams = useSearchParams();
   const [country, setCountry] = useState("United States");
   const [portfolio, setPortfolio] = useState<PortfolioCurrent["portfolio"]>(null);
   const [decision, setDecision] = useState<DecisionLast["decision"]>(null);
@@ -55,6 +59,25 @@ export default function TaxAdvisorPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [advice, setAdvice] = useState<AdviceResponse | null>(null);
+
+  const { startTutorial, isTutorialActive } = useTutorial();
+
+  // Start the tax advisor tutorial when the page loads
+  useEffect(() => {
+    const tutorialParam = searchParams.get("tutorial");
+    const hasCompletedTutorial = localStorage.getItem("hasCompletedTutorial_v2");
+
+    if (
+      (tutorialParam === "tax-advisor" && !isTutorialActive) ||
+      (!tutorialParam && !isTutorialActive && !hasCompletedTutorial)
+    ) {
+      const timer = setTimeout(() => {
+        startTutorial(TAX_ADVISOR_TUTORIAL);
+      }, 500); // Small delay to ensure DOM is ready
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, startTutorial, isTutorialActive]);
 
   useEffect(() => {
     (async () => {
@@ -100,7 +123,7 @@ export default function TaxAdvisorPage() {
     <div className="min-h-screen px-6 py-8">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-          <div className="text-sm text-white/60">Advisor Dashboard</div>
+          <div className="text-sm text-white/60">GLOQONT</div>
           <h1 className="text-3xl font-semibold tracking-tight mt-1">Tax Advisor</h1>
           <p className="text-sm text-white/60 mt-2">
             Action-focused suggestions based on your latest saved portfolio + last scenario decision.

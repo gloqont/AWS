@@ -341,61 +341,147 @@ def _fetch_yfinance_prices(tickers: List[str], lookback_days: int, interval: Int
 
     try:
         # Fetch all tickers at once - much faster than individual requests
+        # yfinance handles partial failures internally (prints errors) but returns what it can
         all_data = yf.download(
             tickers=processed_tickers,
             period=period,
             interval=interval,
             auto_adjust=True,
             progress=False,
-            threads=True,  # Enable threading for internal processing
+            threads=True, 
             group_by="column",
         )
 
-        if all_data is None or all_data.empty:
-            return pd.DataFrame()
-
-        # Process the multi-index DataFrame to extract closing prices
-        if isinstance(all_data.columns, pd.MultiIndex):
-            # Multi-index case: (Attribute, Ticker)
-            close_data = None
-
-            # Try to get Close prices first
-            if "Close" in all_data.columns.get_level_values(0):
-                close_data = all_data["Close"].copy()
-            elif "Adj Close" in all_data.columns.get_level_values(0):
-                close_data = all_data["Adj Close"].copy()
+        close_data = pd.DataFrame()
+        
+        if all_data is not None and not all_data.empty:
+            # Pylance/pandas type check helper
+            if isinstance(all_data.columns, pd.MultiIndex):
+                # Multi-index case: (Attribute, Ticker)
+                # Try to get Close prices first
+                if "Close" in all_data.columns.get_level_values(0):
+                    close_data = all_data["Close"].copy()
+                elif "Adj Close" in all_data.columns.get_level_values(0):
+                    close_data = all_data["Adj Close"].copy()
+                else:
+                    # fallback: use first available attribute
+                    first_attr = all_data.columns.get_level_values(0)[0]
+                    close_data = all_data[first_attr].copy()
+                
+                # Rename columns back to original tickers
+                renamed_cols = {}
+                for col in close_data.columns:
+                    original_ticker = ticker_mapping.get(col, col)
+                    renamed_cols[col] = original_ticker
+                close_data.rename(columns=renamed_cols, inplace=True)
+                
             else:
-                # fallback: use first available attribute
-                first_attr = all_data.columns.get_level_values(0)[0]
-                close_data = all_data[first_attr].copy()
+                # Single index case (usually only if 1 ticker requested, or flat structure)
+                # If we requested multiple and got single level, it might be just Close cols (unlikely with new yf)
+                # Or it might be Attribute cols for a single ticker
+                
+                # Logic for single ticker returned as columns (Open, High, Low, Close...)
+                if "Close" in all_data.columns:
+                    # It's data for a single ticker
+                    # We need to find WHICH ticker it was (if we only asked for 1)
+                    if len(processed_tickers) == 1:
+                         # We know the ticker
+                         raw_ticker = processed_tickers[0]
+                         orig_ticker = ticker_mapping.get(raw_ticker, raw_ticker)
+                         close_data = all_data[["Close"]].copy()
+                         close_data.columns = [orig_ticker]
+                    else:
+                        # Wierd case: multiple tickers asked, but flat schema? 
+                        pass
+                else:
+                     pass
 
-            # Rename columns back to original tickers (without .NS suffix if it was added)
-            renamed_cols = {}
-            for col in close_data.columns:
-                original_ticker = ticker_mapping.get(col, col)
-                renamed_cols[col] = original_ticker
-            close_data.rename(columns=renamed_cols, inplace=True)
-        else:
-            # Single index case - this shouldn't happen with multiple tickers but handle it
-            if "Close" in all_data.columns:
-                close_data = all_data[["Close"]].copy()
-                close_data.columns = [ticker_mapping.get("Close", "Close")]
-            elif "Adj Close" in all_data.columns:
-                close_data = all_data[["Adj Close"]].copy()
-                close_data.columns = [ticker_mapping.get("Adj Close", "Adj Close")]
-            else:
-                close_data = all_data.iloc[:, [0]].copy()
-                close_data.columns = [ticker_mapping.get(close_data.columns[0], close_data.columns[0])]
+        # Identify which tickers we successfully got
+        fetched_tickers = set(close_data.columns)
+        missing_tickers = [t for t in tickers if t not in fetched_tickers]
+        
+        if not missing_tickers:
+             return close_data.sort_index()
+             
+        # Fallback loop ONLY for missing tickers
+        all_prices = close_data.to_dict() # Start with what we have (as dict for easy merge)
+        
+        for ticker in missing_tickers:
+            try:
+                # For Indian tickers, try with .NS suffix if no suffix is provided
+                ticker_to_use = ticker
+                if '.' not in ticker and ticker.upper() in ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK',
+                                                          'SBIN', 'BHARTIARTL', 'ITC', 'ASIANPAINT', 'MARUTI',
+                                                          'AXISBANK', 'SUNPHARMA', 'TATAMOTORS', 'TATASTEEL',
+                                                          'POWERGRID', 'ONGC', 'COALINDIA', 'GRASIM', 'ULTRACEMCO',
+                                                          'NESTLEIND', 'TITAN', 'HINDUNILVR', 'WIPRO', 'BAJFINANCE',
+                                                          'BAJAJFINSV', 'KOTAKBANK', 'JSWSTEEL', 'DRREDDY', 'HDFC',
+                                                          'BRITANNIA', 'CIPLA', 'EICHERMOT', 'GODREJPROP', 'HCLTECH',
+                                                          'INDUSINDBK', 'IOC', 'M&M', 'MINDTREE', 'MUTHOOTFIN',
+                                                          'NAUKRI', 'NEULANDLAB', 'OFSS', 'PIIND', 'POLYCAB',
+                                                          'RAINBOW', 'RAJESHEXPO', 'RBLBANK', 'RECLTD', 'REDINGTON',
+                                                          'SAIL', 'SANOFI', 'SBILIFE', 'SHOPERSTOP', 'SHREECEM',
+                                                          'SRF', 'SUDOCHEM', 'SUMICHEM', 'SUNTV', 'SYNGENE',
+                                                          'TATACHEM', 'TATACONSUM', 'TATACORP', 'TATAELXSI', 'TATAGLOBAL',
+                                                          'TATAINVEST', 'TATAMETALI', 'TATAPOWER', 'TATASPONGE', 'TCS',
+                                                          'TECHM', 'RAMCOCEM', 'UBL', 'VEDL', 'VGUARD',
+                                                          'VOLTAS', 'WHIRLPOOL', 'WOCKPHARMA', 'YESBANK', 'ZEEL']:
+                     ticker_to_use = f"{ticker}.NS"
 
-        # Return the processed data
-        return close_data.sort_index()
+                # Download data for single ticker
+                ticker_data = yf.download(
+                    tickers=[ticker_to_use],
+                    period=period,
+                    interval=interval,
+                    auto_adjust=True,
+                    progress=False,
+                    threads=False,
+                    group_by="column",
+                )
+                
+                single_close = None
+                if ticker_data is not None and not ticker_data.empty:
+                    # Extract closing prices
+                    if isinstance(ticker_data.columns, pd.MultiIndex):
+                        if "Close" in ticker_data.columns.get_level_values(0):
+                            single_close = ticker_data["Close"].copy()
+                        elif "Adj Close" in ticker_data.columns.get_level_values(0):
+                            single_close = ticker_data["Adj Close"].copy()
+                        else:
+                            first_col = ticker_data.columns.get_level_values(0)[0]
+                            single_close = ticker_data[first_col].copy()
+                    else:
+                        if "Close" in ticker_data.columns:
+                            single_close = ticker_data[["Close"]].copy()
+                        elif "Adj Close" in ticker_data.columns:
+                            single_close = ticker_data[["Adj Close"]].copy()
+                        else:
+                            single_close = ticker_data.iloc[:, [0]].copy()
+
+                    if single_close is not None:
+                        # Rename checks
+                        if len(single_close.columns) == 1:
+                            single_close.columns = [ticker]
+                        
+                        # Store the data
+                        for date, row in single_close.iterrows():
+                            if date not in all_prices:
+                                all_prices[date] = {}
+                            for col in row.index:
+                                all_prices[date][col] = row[col]
+
+            except Exception as e:
+                print(f"Warning: Individual fetch failed for {ticker}: {e}")
+                
+        # Convert the dictionary to DataFrame
+        final_df = pd.DataFrame(all_prices).T
+        return final_df.sort_index()
 
     except Exception as e:
         print(f"Warning: Bulk yfinance fetch failed, falling back to individual fetch: {e}")
-        # Fallback to original method if bulk fetch fails
+        # Fallback to original method if bulk fetch fails completely
         all_prices = {}
-        successful_tickers = []
-
+        
         for ticker in tickers:
             try:
                 # For Indian tickers, try with .NS suffix if no suffix is provided
@@ -419,7 +505,6 @@ def _fetch_yfinance_prices(tickers: List[str], lookback_days: int, interval: Int
                     ticker_to_use = f"{ticker}.NS"
 
                 # Download data for single ticker to ensure proper handling of international suffixes
-                period = f"{int(lookback_days)}d"
                 ticker_data = yf.download(
                     tickers=[ticker_to_use],
                     period=period,
@@ -450,7 +535,7 @@ def _fetch_yfinance_prices(tickers: List[str], lookback_days: int, interval: Int
                         else:
                             close_data = ticker_data.iloc[:, [0]].copy()
 
-                    # Rename the column to match the original ticker (not the one with suffix)
+                    # Rename the column to match the original ticker
                     if len(close_data.columns) == 1:
                         close_data.columns = [ticker]
 
@@ -461,61 +546,9 @@ def _fetch_yfinance_prices(tickers: List[str], lookback_days: int, interval: Int
                         for col in row.index:
                             all_prices[date][col] = row[col]
 
-                    successful_tickers.append(ticker)
-
-            except Exception as e:
-                # Log the error but continue with other tickers
-                print(f"Warning: Could not fetch data for ticker {ticker}: {e}")
-                # Try with .NS suffix if not already tried
-                if '.' not in ticker and ticker_to_use != f"{ticker}.NS":
-                    try:
-                        ticker_with_ns = f"{ticker}.NS"
-                        period = f"{int(lookback_days)}d"
-                        ticker_data = yf.download(
-                            tickers=[ticker_with_ns],
-                            period=period,
-                            interval=interval,
-                            auto_adjust=True,
-                            progress=False,
-                            threads=False,
-                            group_by="column",
-                        )
-
-                        if ticker_data is not None and not ticker_data.empty:
-                            # Extract closing prices
-                            if isinstance(ticker_data.columns, pd.MultiIndex):
-                                if "Close" in ticker_data.columns.get_level_values(0):
-                                    close_data = ticker_data["Close"].copy()
-                                elif "Adj Close" in ticker_data.columns.get_level_values(0):
-                                    close_data = ticker_data["Adj Close"].copy()
-                                else:
-                                    # fallback: use first available column
-                                    first_col = ticker_data.columns.get_level_values(0)[0]
-                                    close_data = ticker_data[first_col].copy()
-                            else:
-                                # Single column case
-                                if "Close" in ticker_data.columns:
-                                    close_data = ticker_data[["Close"]].copy()
-                                elif "Adj Close" in ticker_data.columns:
-                                    close_data = ticker_data[["Adj Close"]].copy()
-                                else:
-                                    close_data = ticker_data.iloc[:, [0]].copy()
-
-                            # Rename the column to match the original ticker
-                            if len(close_data.columns) == 1:
-                                close_data.columns = [ticker]
-
-                            # Store the data
-                            for date, row in close_data.iterrows():
-                                if date not in all_prices:
-                                    all_prices[date] = {}
-                                for col in row.index:
-                                    all_prices[date][col] = row[col]
-
-                            successful_tickers.append(ticker)
-                    except Exception as e2:
-                        print(f"Warning: Could not fetch data for ticker {ticker} with .NS suffix: {e2}")
-                        continue
+            except Exception as e2:
+                print(f"Warning: Could not fetch data for ticker {ticker}: {e2}")
+                continue
 
         if not all_prices:
             return pd.DataFrame()
@@ -600,8 +633,6 @@ def fetch_prices(
         mock_prices = _fetch_mock_indian_prices(remaining_tickers, lookback_days, interval)
         if not mock_prices.empty:
             # Add mock data for remaining tickers
-            # To avoid NaN issues when combining data with different date ranges,
-            # we'll align the date ranges by reindexing and forward-filling
             if not all_prices.empty:
                 # Combine the data by reindexing to include all dates
                 all_dates = all_prices.index.union(mock_prices.index).sort_values()
@@ -634,9 +665,11 @@ def fetch_prices(
         msg = "No market data returned (empty download). Try again or change tickers/interval."
         if yfin_error:
             msg += f" (yfinance error: {yfin_error})"
+        # If we have stooq errors in the warnings list (which we track internally but didn't expose), 
+        # we should at least hint at them. But yfin_error is key.
         raise RuntimeError(msg)
 
-    # Check for missing tickers and try to provide more informative feedback
+    # Check for missing tickers
     missing = [t for t in tickers if t not in all_prices.columns]
     if missing:
         # Print warning for missing tickers

@@ -4,8 +4,10 @@ const API_BASE = "";
 export async function apiFetch(path: string, init?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      "x-admin-key": "admin123", // Required for backend authentication
       ...(init?.headers || {}),
     },
   });
