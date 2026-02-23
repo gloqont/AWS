@@ -1,11 +1,15 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { IBM_Plex_Sans } from "next/font/google";
 import { TutorialProvider } from "@/components/tutorial/TutorialContext";
 import TutorialOverlay from "@/components/tutorial/TutorialOverlay";
 import TutorialFlowManager from "@/components/tutorial/TutorialFlowManager";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ui",
+});
 
 export const metadata: Metadata = {
   title: "GLOQONT",
@@ -15,7 +19,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans`} style={{ fontFamily: 'var(--font-inter), system-ui, sans-serif' }}>
+      <body
+        className={`${ibmPlexSans.variable} font-sans antialiased`}
+        style={{ fontFamily: "var(--font-ui), system-ui, sans-serif" }}
+      >
         <TutorialProvider>
           <TutorialOverlay>
             <TutorialFlowManager>

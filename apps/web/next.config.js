@@ -3,6 +3,9 @@ const API_PROXY_TARGET = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localho
 
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
   async rewrites() {
     return [
       {

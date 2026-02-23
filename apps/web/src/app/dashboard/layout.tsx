@@ -88,22 +88,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname, router]);
 
   async function logout() {
-    try {
-      await apiFetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      // Clear auth-related and session-specific state on logout
-      // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
-      localStorage.removeItem("hasCompletedTutorial_v2");
-      localStorage.removeItem("gloqont_tax_profile");
-      localStorage.removeItem("portfolio_rows");
-      localStorage.removeItem("portfolio_name");
-      localStorage.removeItem("portfolio_risk");
+    // Clear auth-related and session-specific state on logout
+    // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
+    localStorage.removeItem("hasCompletedTutorial_v2");
+    localStorage.removeItem("gloqont_tax_profile");
+    localStorage.removeItem("portfolio_rows");
+    localStorage.removeItem("portfolio_name");
+    localStorage.removeItem("portfolio_risk");
 
-      sessionStorage.removeItem("tutorialShownThisSession");
-      sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
+    sessionStorage.removeItem("tutorialShownThisSession");
+    sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
 
-      window.location.href = "/login";
-    }
+    // Use backend redirect to clear local session and Cognito hosted session
+    window.location.href = "/api/v1/auth/logout?next=/login";
   }
 
   const handleWizardComplete = (profile: TaxProfile) => {

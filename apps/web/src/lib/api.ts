@@ -7,7 +7,6 @@ export async function apiFetch(path: string, init?: RequestInit) {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      "x-admin-key": "admin123", // Required for backend authentication
       ...(init?.headers || {}),
     },
   });
