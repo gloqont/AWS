@@ -124,7 +124,17 @@ export default function PortfolioOptimizerPage() {
   const totalValue = useMemo(() => {
     return rows.reduce((acc, r) => {
       const q = toNumber(r.quantity);
-      const p = marketPrices[r.ticker?.toUpperCase()] || 0;
+      const p = (() => {
+        const t = (r.ticker || "").trim().toUpperCase();
+        const direct = marketPrices[t];
+        if (Number.isFinite(direct)) return Number(direct);
+        if (t.endsWith(".NS") || t.endsWith(".BO") || t.endsWith(".L") || t.endsWith(".TO") || t.endsWith(".HK")) {
+          const base = t.split(".")[0];
+          const baseVal = marketPrices[base];
+          if (Number.isFinite(baseVal)) return Number(baseVal);
+        }
+        return 0;
+      })();
       const currency = r.currency || "USD";
       const rate = EXCHANGE_RATES[currency] || 1.0;
       return acc + (q * p * rate);
@@ -138,6 +148,7 @@ export default function PortfolioOptimizerPage() {
   const [loading, setLoading] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const suggestionTimersRef = useRef<Record<number, ReturnType<typeof setTimeout> | null>>({});
 
   // Monte Carlo Paths State for Future Risk Visualization
   const [mcPaths, setMcPaths] = useState<any | null>(null);
@@ -160,6 +171,19 @@ export default function PortfolioOptimizerPage() {
   const totalValueOk = totalValue > 0;
   const canRun = sumOk && totalValueOk && !loading;
 
+  function getLivePrice(ticker: string): number | null {
+    const t = (ticker || "").trim().toUpperCase();
+    if (!t) return null;
+    const direct = marketPrices[t];
+    if (Number.isFinite(direct)) return Number(direct);
+    if (t.endsWith(".NS") || t.endsWith(".BO") || t.endsWith(".L") || t.endsWith(".TO") || t.endsWith(".HK")) {
+      const base = t.split(".")[0];
+      const baseVal = marketPrices[base];
+      if (Number.isFinite(baseVal)) return Number(baseVal);
+    }
+    return null;
+  }
+
   function updateRow(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
@@ -169,14 +193,24 @@ export default function PortfolioOptimizerPage() {
   }
 
   async function fetchSuggestion(i: number, q: string) {
-    if (!q || q.trim().length < 2) return; // Reduce minimum length to 2 for international tickers
-    try {
-      const country = userProfile?.country || "US";
-      const res = await apiFetch(`/api/v1/market/search?q=${encodeURIComponent(q)}&country=${country}`);
-      setSuggestions((s) => ({ ...s, [i]: res }));
-    } catch (e) {
+    const query = (q || "").trim();
+    const existing = suggestionTimersRef.current[i];
+    if (existing) clearTimeout(existing);
+
+    if (query.length < 3) {
       setSuggestions((s) => ({ ...s, [i]: null }));
+      return;
     }
+
+    suggestionTimersRef.current[i] = setTimeout(async () => {
+      try {
+        const country = userProfile?.country || "US";
+        const res = await apiFetch(`/api/v1/market/search?q=${encodeURIComponent(query)}&country=${country}`);
+        setSuggestions((s) => ({ ...s, [i]: res }));
+      } catch (e) {
+        setSuggestions((s) => ({ ...s, [i]: null }));
+      }
+    }, 450);
   }
 
   function addRow() {
@@ -193,7 +227,7 @@ export default function PortfolioOptimizerPage() {
       .map((r) => ({ ticker: r.ticker.trim().toUpperCase(), quantity: toNumber(r.quantity) }));
 
     // compute weights from quantities and marketPrices
-    const vals = positions.map((p) => ({ ticker: p.ticker, val: p.quantity * (marketPrices[p.ticker] || 0) }));
+      const vals = positions.map((p) => ({ ticker: p.ticker, val: p.quantity * (getLivePrice(p.ticker) || 0) }));
     const total = vals.reduce((a, b) => a + b.val, 0) || 1;
 
     return {
@@ -271,7 +305,7 @@ export default function PortfolioOptimizerPage() {
   async function fetchMarketPrices() {
     const tickers = rows
       .map((r) => (r.ticker || "").trim().toUpperCase())
-      .filter((t) => t && /^[A-Z0-9][A-Z0-9._-]*$/.test(t));
+      .filter((t) => t && t.length >= 3 && /^[A-Z0-9][A-Z0-9._-]*$/.test(t));
     const uniqueTickers = Array.from(new Set(tickers));
     if (!uniqueTickers.length) return;
     try {
@@ -281,7 +315,12 @@ export default function PortfolioOptimizerPage() {
       if (data && data.prices_tail && data.prices_tail.values) {
         for (const [k, vals] of Object.entries(data.prices_tail.values)) {
           const arr: any = vals as any;
-          latestValues[k.toUpperCase()] = Number(arr[arr.length - 1] || 0);
+          const price = Number(arr[arr.length - 1] || 0);
+          const key = k.toUpperCase();
+          latestValues[key] = price;
+          if (key.includes(".")) {
+            latestValues[key.split(".")[0]] = price;
+          }
         }
       }
 
@@ -311,7 +350,10 @@ export default function PortfolioOptimizerPage() {
   }
 
   useEffect(() => {
-    fetchMarketPrices();
+    const timer = setTimeout(() => {
+      fetchMarketPrices();
+    }, 600);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.map((r) => r.ticker).join(",")]);
 
@@ -608,21 +650,29 @@ export default function PortfolioOptimizerPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="text-left font-mono tabular-nums text-white/80">
-                        {marketPrices[r.ticker?.toUpperCase()] ? (
+                        {getLivePrice(r.ticker || "") !== null ? (
                           <div>
                             <div className="text-[#D4A853]">
+                              {(() => {
+                                const livePrice = getLivePrice(r.ticker || "");
+                                if (livePrice === null) return <span className="text-white/20">—</span>;
+                                return (
+                                  <>
                               {r.currency && r.currency !== "USD" ? (
                                 <span>
-                                  {fmtMoney(marketPrices[r.ticker?.toUpperCase()], r.currency, r.currency)}
+                                  {fmtMoney(livePrice, r.currency, r.currency)}
                                 </span>
                               ) : (
-                                <span>{fmtMoney(marketPrices[r.ticker?.toUpperCase()], "USD", "USD")}</span>
+                                <span>{fmtMoney(livePrice, "USD", "USD")}</span>
                               )}
+                                  </>
+                                );
+                              })()}
                             </div>
                             {/* Show converted value if user currency is different from asset currency */}
                             {(r.currency || "USD") !== userCurrency && (
                               <div className="text-[10px] text-white/40">
-                                ≈ {fmtMoney((marketPrices[r.ticker?.toUpperCase()] * (EXCHANGE_RATES[r.currency || "USD"] || 1)), userCurrency)}
+                                ≈ {fmtMoney(((getLivePrice(r.ticker || "") || 0) * (EXCHANGE_RATES[r.currency || "USD"] || 1)), userCurrency)}
                               </div>
                             )}
                           </div>

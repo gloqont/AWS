@@ -1,3 +1,4 @@
+# Dependencies / build
 node_modules/
 .next/
 out/
@@ -5,26 +6,38 @@ dist/
 build/
 .turbo/
 coverage/
+
+# Env + secrets
 .env
 .env.*
+!.env.example
+!.env.local.example
 *.pem
+*.key
+*.crt
+
+# Editor / OS
 .DS_Store
 .vscode/
 .idea/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+apps/api/.venv/
+apps/api/.venv_check/
+
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-apps/api/.venv/
-apps/api/.venv_check/
+# Runtime cache/data (local-only)
 data/cache/
-*.log
-
-apps/api/.venv/
-data/cache/
-*.log
+data/portfolios.json
+data/decisions.json
+data/user_profiles.json

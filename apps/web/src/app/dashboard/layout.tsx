@@ -18,7 +18,6 @@ const nav = [
   { label: "Portfolio", href: "/dashboard/portfolio-optimizer", id: "portfolio-optimizer-link" },
   { label: "Scenario Simulation", href: "/dashboard/scenario-simulation", id: "scenario-simulation-link" },
   { label: "Tax Advisor", href: "/dashboard/tax-advisor", id: "tax-advisor-link" },
-  { label: "Tax Impact", href: "/dashboard/tax-impact", id: "tax-impact-link" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +28,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [collapsed, setCollapsed] = useState(false);
   const [isTaxWizardOpen, setIsTaxWizardOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isLightTheme, setIsLightTheme] = useState(false);
   const [savedProfile, setSavedProfile] = useState<TaxProfile | null>(null);
+  const [authUser, setAuthUser] = useState<{
+    email?: string | null;
+    sub?: string | null;
+    role?: string | null;
+    provider?: string | null;
+  } | null>(null);
 
   // Persist collapsed state
   useEffect(() => {
@@ -48,8 +54,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const theme = localStorage.getItem("theme_preference");
     if (theme === "light") {
       document.documentElement.classList.add("theme-light");
+      setIsLightTheme(true);
     } else {
       document.documentElement.classList.remove("theme-light");
+      setIsLightTheme(false);
     }
   }, []);
 
@@ -70,11 +78,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     let active = true;
     (async () => {
       try {
-        await apiFetch("/api/v1/auth/me");
+        const me = await apiFetch("/api/v1/auth/me");
         if (!active) return;
+        setAuthUser(me?.user ?? null);
         setIsAuthed(true);
       } catch {
         if (!active) return;
+        setAuthUser(null);
         setIsAuthed(false);
         router.replace(`/login?next=${encodeURIComponent(pathname || "/dashboard/portfolio-optimizer")}`);
       } finally {
@@ -225,13 +235,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Bottom Section — Settings + Theme + Logout */}
           <div className={collapsed ? "px-3 pb-4 flex flex-col items-center gap-2" : "px-3 pb-4 space-y-2"}>
+            {authUser && (
+              <div
+                className={[
+                  "rounded-xl border border-[#D4A853]/20 bg-black/40",
+                  collapsed ? "h-10 w-10 flex items-center justify-center text-[11px] font-semibold text-[#D4A853]" : "px-3 py-2",
+                ].join(" ")}
+                title={authUser.email || authUser.sub || "Signed-in account"}
+              >
+                {collapsed ? (
+                  <span>{(authUser.email || authUser.sub || "U").slice(0, 1).toUpperCase()}</span>
+                ) : (
+                  <>
+                    <div className="text-xs uppercase tracking-wider text-[#D4A853]/75">Signed in</div>
+                    <div className="text-sm font-medium text-white truncate">{authUser.email || authUser.sub || "Unknown user"}</div>
+                    <div className="text-xs text-white/60 capitalize">
+                      {(authUser.provider || "local")} • {(authUser.role || "user")}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* ⚙ Settings Button */}
             <button
               onClick={() => setShowSettings(!showSettings)}
               className={[
                 "rounded-xl border transition-colors",
-                collapsed ? "h-10 w-10 text-sm border-white/10 bg-white/5 hover:bg-white/10" : "w-full px-3 py-2 text-sm text-left flex items-center gap-2",
+                collapsed ? "h-10 w-10 text-sm border-white/10 bg-white/5 hover:bg-white/10" : "w-full px-3 py-2 text-[15px] flex items-center justify-center gap-2",
                 showSettings
                   ? "bg-[#D4A853]/10 border-[#D4A853]/30 text-[#D4A853]"
                   : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-[#D4A853]/30 hover:text-[#D4A853]",
@@ -301,27 +332,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 if (html.classList.contains("theme-light")) {
                   html.classList.remove("theme-light");
                   localStorage.setItem("theme_preference", "dark");
+                  setIsLightTheme(false);
                 } else {
                   html.classList.add("theme-light");
                   localStorage.setItem("theme_preference", "light");
+                  setIsLightTheme(true);
                 }
               }}
               className={[
                 "rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-[#D4A853]/30 hover:text-[#D4A853] transition-colors",
-                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-sm",
+                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-[15px]",
               ].join(" ")}
               title="Toggle Theme"
             >
-              {collapsed ? "◑" : "Toggle Theme"}
+              {collapsed ? (isLightTheme ? "🌙" : "☀️") : `${isLightTheme ? "🌙" : "☀️"} Toggle Theme`}
             </button>
             <button
               onClick={logout}
               className={[
                 "rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-red-500/30 hover:text-red-400 transition-colors",
-                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-sm",
+                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-[15px]",
               ].join(" ")}
             >
-              {collapsed ? "⎋" : "Logout"}
+              {collapsed ? "⎋" : "⎋ Logout"}
             </button>
           </div>
 

@@ -5,7 +5,7 @@ import secrets
 import math
 import asyncio
 from typing import List, Literal, Optional, Dict, Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote_plus
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,10 @@ from fastapi import FastAPI, Response, Request, HTTPException
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel, Field, field_validator
 import traceback
@@ -46,6 +50,8 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
+ENABLE_YFINANCE_LIVE_FALLBACK = os.getenv("ENABLE_YFINANCE_LIVE_FALLBACK", "false").strip().lower() in {"1", "true", "yes"}
 
 # Cognito OAuth configuration
 COGNITO_REGION = os.getenv("COGNITO_REGION", "").strip()
@@ -53,6 +59,7 @@ COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "").strip()
 COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "").strip()
 COGNITO_CLIENT_SECRET = os.getenv("COGNITO_CLIENT_SECRET", "").strip()
 COGNITO_DOMAIN = os.getenv("COGNITO_DOMAIN", "").strip()  # host only, no https://
+COGNITO_API_DOMAIN = os.getenv("COGNITO_API_DOMAIN", COGNITO_DOMAIN).strip()  # optional override for token/userInfo host
 COGNITO_REDIRECT_URI = os.getenv("COGNITO_REDIRECT_URI", "http://localhost:3000/api/v1/auth/callback").strip()
 COGNITO_LOGOUT_REDIRECT_URI = os.getenv("COGNITO_LOGOUT_REDIRECT_URI", "http://localhost:3000/login").strip()
 COGNITO_SCOPES = os.getenv("COGNITO_SCOPES", "openid email profile").strip()
@@ -71,6 +78,9 @@ PROFILES_PATH = os.path.join(DATA_DIR, "user_profiles.json")
 # ── In-memory price cache for instant refetches ──
 _PRICE_CACHE: Dict[str, Any] = {}  # key -> {"data": ..., "ts": float}
 _PRICE_CACHE_TTL = 300  # 5 minutes
+_SYMBOL_PRICE_CACHE: Dict[str, Dict[str, Any]] = {}  # SYMBOL -> {"price": float, "currency": str, "ts": float, "source": str}
+_SYMBOL_PRICE_CACHE_MAX_STALE = 60 * 60 * 24  # 24h hard cap for stale fallback
+_SYMBOL_PRICE_CACHE_FAST_AGE = 120  # 2 minutes for instant quote refresh
 
 def _get_cached_prices(cache_key: str):
     entry = _PRICE_CACHE.get(cache_key)
@@ -80,6 +90,24 @@ def _get_cached_prices(cache_key: str):
 
 def _set_cached_prices(cache_key: str, data: Any):
     _PRICE_CACHE[cache_key] = {"data": data, "ts": time.time()}
+
+
+def _set_symbol_price_cache(symbol: str, price: float, currency: str = "USD", source: str = "twelve_data") -> None:
+    _SYMBOL_PRICE_CACHE[symbol.upper()] = {
+        "price": float(price),
+        "currency": (currency or "USD").upper(),
+        "ts": time.time(),
+        "source": source,
+    }
+
+
+def _get_symbol_price_cache(symbol: str, max_age_seconds: int = _SYMBOL_PRICE_CACHE_MAX_STALE) -> Optional[Dict[str, Any]]:
+    item = _SYMBOL_PRICE_CACHE.get(symbol.upper())
+    if not item:
+        return None
+    if (time.time() - float(item.get("ts", 0))) <= max_age_seconds:
+        return item
+    return None
 
 app = FastAPI(title="GLOQONT API", version="1.4.0")  # bump version
 
@@ -433,8 +461,9 @@ def _cognito_enabled() -> bool:
     return bool(COGNITO_DOMAIN and COGNITO_CLIENT_ID and COGNITO_REDIRECT_URI)
 
 
-def _build_cognito_url(path: str) -> str:
-    host = COGNITO_DOMAIN.removeprefix("https://").removesuffix("/")
+def _build_cognito_url(path: str, *, api: bool = False) -> str:
+    host_value = COGNITO_API_DOMAIN if api else COGNITO_DOMAIN
+    host = host_value.removeprefix("https://").removesuffix("/")
     return f"https://{host}{path}"
 
 
@@ -541,8 +570,8 @@ def cognito_callback(code: Optional[str] = None, state: Optional[str] = None, er
         raise HTTPException(status_code=401, detail="Invalid OAuth state")
 
     next_path = _safe_next_path(state_data.get("next"))
-    token_url = _build_cognito_url("/oauth2/token")
-    userinfo_url = _build_cognito_url("/oauth2/userInfo")
+    token_url = _build_cognito_url("/oauth2/token", api=True)
+    userinfo_url = _build_cognito_url("/oauth2/userInfo", api=True)
 
     token_payload = {
         "grant_type": "authorization_code",
@@ -763,60 +792,83 @@ def market_search(request: Request, q: str, country: str = "US"):
     if not q or not q.strip():
         raise HTTPException(status_code=400, detail="query required")
 
+    query = q.strip().upper()
+    query = _canonical_symbol_for_prices(query)
+
     # First try to resolve using our canonical asset resolver
     asset_info = ASSET_RESOLVER.resolve_asset(q)
     if asset_info and asset_info.is_valid:
+        resolved_symbol = str(asset_info.symbol or query).upper()
+        if asset_info.country == "India" and "." not in resolved_symbol:
+            resolved_symbol = f"{resolved_symbol}.NS"
         return {
             "ok": True,
-            "symbol": asset_info.symbol,
+            "symbol": resolved_symbol,
             "shortname": asset_info.name,
             "exchange": "NSE" if asset_info.country == "India" else "NASDAQ" if asset_info.country == "USA" else "OTHER",
             "currency": "INR" if asset_info.country == "India" else "USD",
         }
 
-    # Prioritize suffix based on country
-    prioritized_suffix = ""
-    if country == "IN":
-        prioritized_suffix = ".NS"
-    elif country == "CA":
-        prioritized_suffix = ".TO"
-    elif country == "GB":
-        prioritized_suffix = ".L"
-    elif country == "DE":
-        prioritized_suffix = ".DE"
-    elif country == "FR":
-        prioritized_suffix = ".PA"
-    
-    # OPTIMIZED: Only try the prioritized suffix + raw query (max 2 calls instead of ~12)
-    queries_to_try = []
-    if prioritized_suffix and not q.upper().endswith(prioritized_suffix):
-        queries_to_try.append(f"{q}{prioritized_suffix}")
-    queries_to_try.append(q)
+    # Twelve Data global symbol search (primary)
+    if TWELVE_DATA_API_KEY:
+        td = _twelve_get_json("/symbol_search", {"symbol": query, "outputsize": 12})
+        if td and str(td.get("status", "")).lower() != "error":
+            data = td.get("data", []) if isinstance(td, dict) else []
+            if isinstance(data, list) and data:
+                # Prefer exact symbol startswith + optional country filter
+                best = None
+                for item in data:
+                    sym = str(item.get("symbol", "")).upper()
+                    item_country = str(item.get("country", "")).upper()
+                    if country and item_country and country.upper() not in item_country and country.upper() != "US":
+                        # Keep global behavior; only apply filter when clearly not US default
+                        pass
+                    if sym == query or sym.startswith(query):
+                        best = item
+                        break
+                if best is None:
+                    best = data[0]
 
-    for test_query in queries_to_try:
-        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={test_query}&quotesCount=1&newsCount=0"
-        try:
-            r = httpx.get(url, timeout=3.0)
-            r.raise_for_status()
-            data = r.json()
-            quotes = data.get("quotes", [])
-            for qitem in quotes:
-                typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
-                sym = qitem.get("symbol", "")
-                
-                if country == "IN" and not (sym.endswith(".NS") or sym.endswith(".BO")):
-                    continue
+                raw_symbol = str(best.get("symbol", "")).upper()
+                exch = str(best.get("exchange", "")).upper()
+                mapped_symbol = raw_symbol
+                if exch == "NSE":
+                    mapped_symbol = f"{raw_symbol}.NS"
+                elif exch == "BSE":
+                    mapped_symbol = f"{raw_symbol}.BO"
+                elif exch in ("LSE", "XLON"):
+                    mapped_symbol = f"{raw_symbol}.L"
+                elif exch in ("TSX", "XTSE"):
+                    mapped_symbol = f"{raw_symbol}.TO"
 
-                if (typ and "EQUITY" in str(typ).upper()) or sym:
-                    return {
-                        "ok": True,
-                        "symbol": sym,
-                        "shortname": qitem.get("shortname") or qitem.get("longname"),
-                        "exchange": qitem.get("exchange"),
-                        "currency": qitem.get("currency"),
-                    }
-        except Exception:
-            continue
+                return {
+                    "ok": True,
+                    "symbol": mapped_symbol,
+                    "shortname": best.get("instrument_name") or best.get("name") or mapped_symbol,
+                    "exchange": best.get("exchange"),
+                    "currency": best.get("currency") or "USD",
+                }
+
+    # Direct symbol probe fallback (handles plain inputs like BPCL -> BPCL.NS/BPCL.BO).
+    # This avoids hard-failing search when provider symbol-search indexes are incomplete.
+    probe_candidates: List[str] = []
+    if "." in query:
+        probe_candidates.append(query)
+    else:
+        probe_candidates.extend([query, f"{query}.NS", f"{query}.BO"])
+    probe_candidates = _sanitize_tickers(probe_candidates)
+
+    if probe_candidates:
+        p, c, _ = _fetch_live_quotes(probe_candidates)
+        for cand in probe_candidates:
+            if cand in p:
+                return {
+                    "ok": True,
+                    "symbol": cand,
+                    "shortname": cand,
+                    "exchange": "NSE" if cand.endswith(".NS") else "BSE" if cand.endswith(".BO") else "GLOBAL",
+                    "currency": c.get(cand, _default_currency_for_symbol(cand)),
+                }
 
     raise HTTPException(status_code=404, detail="No ticker found")
 
@@ -2064,10 +2116,7 @@ def scenario_run(request: Request, body: ScenarioIn):
     if data is not None:
         try:
             tail = data.prices.tail(24)
-            market_context["prices_tail"] = {
-                "index": [str(x) for x in tail.index],
-                "values": {c: [float(v) for v in tail[c].values] for c in tail.columns},
-            }
+            market_context["prices_tail"] = _to_prices_tail_payload(tail)
         except Exception:
             market_context["prices_tail"] = {}
 
@@ -2586,22 +2635,11 @@ async def market_stream(request: Request, tickers: str):
             try:
                 if not tlist:
                     raise ValueError("No valid tickers provided")
-                data = fetch_prices(tlist, lookback_days=2, interval="1d")
-                tail = data.prices.tail(1)
-                if tail is not None and not tail.empty:
-                    payload = {c: float(tail[c].iloc[-1]) for c in tail.columns}
+                prices, _, w = _fetch_live_quotes(tlist)
+                payload = {k: float(v) for k, v in prices.items()}
+                warnings.extend(w[:5])
             except Exception as e:
                 warnings.append(str(e))
-                # try per-ticker fallback to provide partial data
-                for tk in tlist:
-                    try:
-                        d = fetch_prices([tk], lookback_days=2, interval="1d")
-                        ttail = d.prices.tail(1)
-                        if ttail is not None and not ttail.empty:
-                            col = ttail.columns[0]
-                            payload[tk] = float(ttail[col].iloc[-1])
-                    except Exception as e2:
-                        warnings.append(f"{tk}: {e2}")
             item = {"ts": int(time.time()), "prices": payload}
             if warnings:
                 item["warnings"] = warnings
@@ -2990,6 +3028,419 @@ def _sanitize_tickers(raw: List[str]) -> List[str]:
         out.append(s)
     return out
 
+
+def _httpx_get_json(url: str, timeout_s: float = 3.0) -> Optional[Dict[str, Any]]:
+    """Best-effort JSON getter with SSL-relaxed retry for hostile local cert chains."""
+    try:
+        r = httpx.get(url, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        try:
+            r = httpx.get(url, timeout=timeout_s, verify=False)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+
+def _to_twelve_symbol(raw_symbol: str) -> str:
+    """Convert common Yahoo-style suffixes into Twelve Data symbol format."""
+    s = (raw_symbol or "").strip().upper()
+    suffix_map = {
+        ".NS": ":NSE",
+        ".BO": ":BSE",
+        ".L": ":LSE",
+        ".TO": ":TSX",
+        ".HK": ":HKEX",
+    }
+    for k, v in suffix_map.items():
+        if s.endswith(k):
+            return f"{s[:-len(k)]}{v}"
+    return s
+
+
+def _to_twelve_symbols(raw_symbol: str) -> List[str]:
+    """Build Twelve Data symbol variants for better global hit rate."""
+    s = (raw_symbol or "").strip().upper()
+    if not s:
+        return []
+    variants: List[str] = []
+    is_indian = _is_indian_symbol(s)
+    if s.endswith(".NS"):
+        base = s[:-3]
+        variants.extend([f"{base}:NSE", base, s])
+    elif s.endswith(".BO"):
+        base = s[:-3]
+        variants.extend([f"{base}:BSE", base, s])
+    elif s.endswith(".L"):
+        base = s[:-2]
+        variants.extend([f"{base}:LSE", base, s])
+    elif s.endswith(".TO"):
+        base = s[:-3]
+        variants.extend([f"{base}:TSX", base, s])
+    elif s.endswith(".HK"):
+        base = s[:-3]
+        variants.extend([f"{base}:HKEX", base, s])
+    else:
+        variants.extend([s, _to_twelve_symbol(s)])
+        if is_indian:
+            variants.extend([f"{s}:NSE", f"{s}:BSE", f"{s}.NS", f"{s}.BO"])
+
+    seen = set()
+    out = []
+    for v in variants:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _from_twelve_symbol(td_symbol: str) -> str:
+    """Map Twelve Data exchange suffixes back to UI symbol convention."""
+    s = (td_symbol or "").strip().upper()
+    suffix_map = {
+        ":NSE": ".NS",
+        ":BSE": ".BO",
+        ":LSE": ".L",
+        ":TSX": ".TO",
+        ":HKEX": ".HK",
+    }
+    for k, v in suffix_map.items():
+        if s.endswith(k):
+            return f"{s[:-len(k)]}{v}"
+    return s
+
+
+def _twelve_get_json(path: str, params: Dict[str, Any], timeout_s: float = 5.0) -> Optional[Dict[str, Any]]:
+    if not TWELVE_DATA_API_KEY:
+        return None
+    q = dict(params or {})
+    q["apikey"] = TWELVE_DATA_API_KEY
+    url = f"https://api.twelvedata.com{path}"
+    try:
+        r = httpx.get(url, params=q, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+def _extract_td_price_currency(item: Dict[str, Any]) -> tuple[Optional[float], Optional[str]]:
+    candidates = [
+        item.get("price"),
+        item.get("close"),
+        item.get("previous_close"),
+        item.get("ask"),
+        item.get("bid"),
+    ]
+    price = next((float(v) for v in candidates if v is not None and str(v).replace(".", "", 1).replace("-", "", 1).isdigit()), None)
+    if price is None:
+        for v in candidates:
+            try:
+                fv = float(v)
+                if fv > 0:
+                    price = fv
+                    break
+            except Exception:
+                continue
+    if price is not None and price <= 0:
+        price = None
+    currency = item.get("currency") or item.get("currency_base")
+    ccy = str(currency).upper() if currency else None
+    if ccy and (len(ccy) != 3 or not ccy.isalpha()):
+        ccy = None
+    return price, ccy
+
+
+def _to_yf_symbols(symbol: str) -> List[str]:
+    """Build yfinance symbol variants, including Indian exchange suffixes."""
+    s = (symbol or "").strip().upper()
+    if not s:
+        return []
+    variants: List[str] = []
+    if s.endswith(".NS") or s.endswith(".BO"):
+        base = s.split(".")[0]
+        variants.extend([s, base])
+    elif "." in s:
+        variants.append(s)
+    else:
+        variants.append(s)
+        if _is_indian_symbol(s):
+            variants.extend([f"{s}.NS", f"{s}.BO"])
+    seen = set()
+    out = []
+    for v in variants:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _fetch_yfinance_live_quote(symbol: str) -> tuple[Optional[float], Optional[str]]:
+    """Fetch latest quote from yfinance for a single symbol with small variant probing."""
+    if yf is None:
+        return None, None
+    for cand in _to_yf_symbols(symbol):
+        try:
+            df = yf.download(
+                tickers=cand,
+                period="2d",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+                group_by="column",
+            )
+            if df is not None and not df.empty and "Close" in df.columns:
+                close = df["Close"].dropna()
+                if not close.empty:
+                    p = float(close.iloc[-1])
+                    if p > 0:
+                        ccy = _default_currency_for_symbol(cand)
+                        return p, ccy
+            tk = yf.Ticker(cand)
+            hist = tk.history(period="5d", interval="1d", auto_adjust=True)
+            if hist is not None and not hist.empty and "Close" in hist.columns:
+                close = hist["Close"].dropna()
+                if not close.empty:
+                    p = float(close.iloc[-1])
+                    if p > 0:
+                        ccy = _default_currency_for_symbol(cand)
+                        return p, ccy
+        except Exception:
+            continue
+    return None, None
+
+
+def _fetch_yahoo_live_quote(symbol: str) -> tuple[Optional[float], Optional[str]]:
+    """Fetch latest quote directly from Yahoo quote/chart endpoints with relaxed SSL retry."""
+    for cand in _to_yf_symbols(symbol):
+        quote_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={quote_plus(cand)}"
+        qdata = _httpx_get_json(quote_url, timeout_s=4.0)
+        if isinstance(qdata, dict):
+            result = ((qdata.get("quoteResponse") or {}).get("result") or [])
+            for item in result:
+                sym = str(item.get("symbol", "")).upper()
+                if sym and sym != cand:
+                    continue
+                p = item.get("regularMarketPrice")
+                if isinstance(p, (int, float)) and float(p) > 0:
+                    ccy = str(item.get("currency", "")).upper() or _default_currency_for_symbol(cand)
+                    return float(p), ccy
+
+        chart_url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote_plus(cand)}"
+            f"?interval=1d&range=5d&includePrePost=false&events=div%2Csplits"
+        )
+        cdata = _httpx_get_json(chart_url, timeout_s=4.0)
+        try:
+            result = ((cdata or {}).get("chart", {}) or {}).get("result", [None])[0]
+            if result:
+                inds = result.get("indicators", {}) or {}
+                close = None
+                adj = inds.get("adjclose") or []
+                if adj and isinstance(adj[0], dict):
+                    close = adj[0].get("adjclose")
+                if close is None:
+                    quote = inds.get("quote") or []
+                    if quote and isinstance(quote[0], dict):
+                        close = quote[0].get("close")
+                if close:
+                    vals = [float(v) for v in close if isinstance(v, (int, float)) and float(v) > 0]
+                    if vals:
+                        meta_ccy = str((result.get("meta") or {}).get("currency", "")).upper()
+                        ccy = meta_ccy or _default_currency_for_symbol(cand)
+                        return float(vals[-1]), ccy
+        except Exception:
+            pass
+
+    return None, None
+
+
+def _default_currency_for_symbol(symbol: str) -> str:
+    s = (symbol or "").upper()
+    if s.endswith(".NS") or s.endswith(".BO"):
+        return "INR"
+    if s.endswith(".L"):
+        return "GBP"
+    if s.endswith(".TO"):
+        return "CAD"
+    if s.endswith(".HK"):
+        return "HKD"
+    return "USD"
+
+
+def _canonical_symbol_for_prices(symbol: str) -> str:
+    """Normalize known symbols to provider-friendly canonical forms."""
+    s = (symbol or "").strip().upper()
+    if not s:
+        return s
+    try:
+        info = ASSET_RESOLVER.resolve_asset(s)
+        if info and info.is_valid:
+            resolved = str(info.symbol or s).upper()
+            if info.country == "India" and "." not in resolved:
+                return f"{resolved}.NS"
+            return resolved
+    except Exception:
+        pass
+    return s
+
+
+def _is_indian_symbol(symbol: str) -> bool:
+    s = (symbol or "").strip().upper()
+    if s.endswith(".NS") or s.endswith(".BO"):
+        return True
+    try:
+        info = ASSET_RESOLVER.resolve_asset(s)
+        return bool(info and info.country == "India")
+    except Exception:
+        return False
+
+
+def _to_prices_tail_payload(df: pd.DataFrame) -> Dict[str, Any]:
+    """Serialize a price frame safely for JSON (no NaN/Inf)."""
+    values: Dict[str, List[Optional[float]]] = {}
+    if df is None or df.empty:
+        return {"index": [], "values": values}
+
+    for c in df.columns:
+        series: List[Optional[float]] = []
+        has_finite = False
+        for v in df[c].values:
+            try:
+                fv = float(v)
+            except Exception:
+                fv = float("nan")
+            if math.isfinite(fv):
+                series.append(fv)
+                has_finite = True
+            else:
+                series.append(None)
+        if has_finite:
+            values[str(c)] = series
+
+    return {"index": [str(x) for x in df.index], "values": values}
+
+
+def _fetch_live_quotes(tickers: List[str]) -> tuple[Dict[str, float], Dict[str, str], List[str]]:
+    """
+    Pull quotes from Twelve Data, then yfinance, then cached prices.
+    Returns prices, currencies, warnings.
+    """
+    symbols = [t.strip().upper() for t in tickers if t and t.strip()]
+    if not symbols:
+        return {}, {}, ["No symbols provided"]
+
+    warnings: List[str] = []
+    prices: Dict[str, float] = {}
+    currencies: Dict[str, str] = {}
+
+    # Hot cache first for snappy UI refreshes.
+    for s in symbols:
+        cached = _get_symbol_price_cache(s, _SYMBOL_PRICE_CACHE_FAST_AGE)
+        if cached:
+            prices[s] = float(cached["price"])
+            currencies[s] = str(cached.get("currency") or _default_currency_for_symbol(s))
+
+    # Provider 1: Twelve Data
+    if TWELVE_DATA_API_KEY:
+        td_variants = {s: _to_twelve_symbols(s) for s in symbols}
+        td_primary = {s: (v[0] if v else _to_twelve_symbol(s)) for s, v in td_variants.items()}
+        batch = _twelve_get_json("/quote", {"symbol": ",".join(td_primary.values())})
+        if batch:
+            if str(batch.get("status", "")).lower() == "error":
+                warnings.append(f"twelve_data_batch_error:{batch.get('message', 'unknown')}")
+            else:
+                parsed_count = 0
+                for req_sym, td_sym in td_primary.items():
+                    rec = batch.get(td_sym) or batch.get(req_sym) or batch.get(_from_twelve_symbol(td_sym))
+                    if isinstance(rec, dict):
+                        p, ccy = _extract_td_price_currency(rec)
+                        if p is not None:
+                            prices[req_sym] = p
+                            if ccy:
+                                currencies[req_sym] = ccy
+                            parsed_count += 1
+                if parsed_count == 0 and isinstance(batch, dict) and "symbol" in batch:
+                    rec_sym = str(batch.get("symbol", "")).upper()
+                    ui_sym = _from_twelve_symbol(rec_sym)
+                    p, ccy = _extract_td_price_currency(batch)
+                    if p is not None:
+                        back = next((k for k, v in td_primary.items() if v == rec_sym), ui_sym)
+                        prices[back] = p
+                        if ccy:
+                            currencies[back] = ccy
+        else:
+            warnings.append("twelve_data_batch_failed")
+
+        for req_sym, td_list in td_variants.items():
+            if req_sym in prices:
+                continue
+            got = False
+            for td_sym in td_list:
+                one = _twelve_get_json("/quote", {"symbol": td_sym})
+                if not one:
+                    continue
+                if str(one.get("status", "")).lower() == "error":
+                    continue
+                p, ccy = _extract_td_price_currency(one if isinstance(one, dict) else {})
+                if p is not None:
+                    prices[req_sym] = p
+                    if ccy:
+                        currencies[req_sym] = ccy
+                    got = True
+                    break
+            if not got:
+                warnings.append(f"twelve_data_symbol_failed:{req_sym}")
+    else:
+        warnings.append("twelve_data_not_configured")
+
+    # Provider 2: Direct Yahoo endpoints (quote/chart), avoids yfinance parser brittleness.
+    for req_sym in symbols:
+        if req_sym in prices:
+            continue
+        p, ccy = _fetch_yahoo_live_quote(req_sym)
+        if p is not None:
+            prices[req_sym] = p
+            currencies[req_sym] = ccy or currencies.get(req_sym, _default_currency_for_symbol(req_sym))
+            _set_symbol_price_cache(req_sym, p, currencies[req_sym], source="yahoo_direct")
+        else:
+            warnings.append(f"yahoo_direct_symbol_failed:{req_sym}")
+
+    # Provider 3: optional yfinance fallback (disabled by default for latency).
+    if ENABLE_YFINANCE_LIVE_FALLBACK:
+        for req_sym in symbols:
+            if req_sym in prices:
+                continue
+            p, ccy = _fetch_yfinance_live_quote(req_sym)
+            if p is not None:
+                prices[req_sym] = p
+                currencies[req_sym] = ccy or currencies.get(req_sym, _default_currency_for_symbol(req_sym))
+                _set_symbol_price_cache(req_sym, p, currencies[req_sym], source="yfinance")
+            else:
+                warnings.append(f"yfinance_symbol_failed:{req_sym}")
+
+    # Update cache for fresh values.
+    for s, p in prices.items():
+        if not _get_symbol_price_cache(s, max_age_seconds=2):
+            _set_symbol_price_cache(s, p, currencies.get(s, _default_currency_for_symbol(s)), source="twelve_or_yfinance")
+
+    # Final fallback: last cached value.
+    missing = [s for s in symbols if s not in prices]
+    for s in missing:
+        cached = _get_symbol_price_cache(s, _SYMBOL_PRICE_CACHE_MAX_STALE)
+        if cached:
+            prices[s] = float(cached["price"])
+            currencies[s] = str(cached.get("currency") or "USD")
+            age_sec = int(time.time() - float(cached.get("ts", 0)))
+            warnings.append(f"using_cached_price:{s}:age={age_sec}s")
+        elif s in prices and s not in currencies:
+            currencies[s] = _default_currency_for_symbol(s)
+
+    return prices, currencies, warnings
+
 @app.get("/api/v1/market/prices")
 def market_prices(
     request: Request,
@@ -2999,20 +3450,133 @@ def market_prices(
 ):
     require_admin(request)
     raw = [t for t in tickers.split(",")]
-    tlist = _sanitize_tickers(raw)
+    tlist = _sanitize_tickers([_canonical_symbol_for_prices(t) for t in raw])
     warnings: List[str] = []
     
     # Check in-memory cache first for instant response
     cache_key = f"prices:{','.join(sorted(tlist))}:{lookback}:{interval}"
     cached = _get_cached_prices(cache_key)
     if cached is not None:
-        return cached
+        try:
+            rows = int((cached or {}).get("data", {}).get("rows_returned", 0))
+            # Don't serve stale empty responses; re-attempt upstream fetch.
+            if rows > 0:
+                cached_vals = ((cached or {}).get("data", {}).get("prices_tail", {}) or {}).get("values", {}) or {}
+                cached_symbols = {str(k).upper() for k in cached_vals.keys()}
+                requested_symbols = {str(t).upper() for t in tlist}
+                # Avoid serving partial cached responses that are missing requested symbols.
+                if requested_symbols.issubset(cached_symbols):
+                    return cached
+        except Exception:
+            return cached
+
+    # Indian/global symbols are more reliable via the broader fetch stack than
+    # the live-quote shortcut (which is US-focused and provider-sensitive).
+    if interval == "1d" and lookback <= 5 and tlist and any(_is_indian_symbol(t) for t in tlist):
+        try:
+            data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
+            tail = data.prices.tail(1)
+            if not tail.empty:
+                out = {
+                    "tickers": tlist,
+                    "interval": interval,
+                    "lookback_days": lookback,
+                    "rows_returned": int(tail.shape[0]),
+                    "source": f"direct_fallback:{getattr(data, 'source', 'unknown')}",
+                    "currencies": {t: _default_currency_for_symbol(t) for t in tlist},
+                    "prices_tail": _to_prices_tail_payload(tail),
+                }
+                result = {"ok": True, "data": out}
+                _set_cached_prices(cache_key, result)
+                return result
+        except Exception as e:
+            warnings.append(f"direct_fallback_failed:{e}")
+
+    # Fast path for UI quote refreshes: fetch live quotes directly.
+    if interval == "1d" and lookback <= 5 and tlist:
+        live_prices, live_ccy, live_diag = _fetch_live_quotes(tlist)
+        if live_prices:
+            # If only a subset resolved from live providers, backfill missing tickers
+            # via the broader historical fetch stack before returning.
+            missing = [t for t in tlist if t not in live_prices]
+            if missing:
+                try:
+                    fb_data = fetch_prices(missing, lookback_days=lookback, interval=interval, require_returns=False)
+                    fb_tail = fb_data.prices.tail(1)
+                    if not fb_tail.empty:
+                        for sym in fb_tail.columns:
+                            vals = fb_tail[sym].dropna()
+                            if not vals.empty:
+                                live_prices[sym] = float(vals.iloc[-1])
+                                live_ccy[sym] = _default_currency_for_symbol(sym)
+                        warnings.append(f"live_quote_partial_backfilled:{getattr(fb_data, 'source', 'unknown')}")
+                except Exception as e:
+                    warnings.append(f"live_quote_backfill_failed:{e}")
+
+            now = pd.Timestamp.utcnow().floor("s")
+            safe_live = {t: float(v) for t, v in live_prices.items() if _is_finite(v)}
+            out = {
+                "tickers": tlist,
+                "interval": interval,
+                "lookback_days": lookback,
+                "rows_returned": 1,
+                "source": "live_quote",
+                "currencies": {t: live_ccy.get(t, "USD") for t in tlist},
+                "prices_tail": {
+                    "index": [str(now)],
+                    "values": {t: [float(v)] for t, v in safe_live.items()},
+                },
+            }
+            missing = [t for t in tlist if t not in safe_live]
+            if missing:
+                out["warnings"] = [f"Missing live quote for: {', '.join(missing)}"] + warnings + live_diag[:5]
+            elif warnings:
+                out["warnings"] = warnings + live_diag[:5]
+            result = {"ok": True, "data": out}
+            if not missing:
+                _set_cached_prices(cache_key, result)
+            return result
+        else:
+            warnings.extend([f"live_quote_failed:{x}" for x in live_diag[:5]] if live_diag else ["live_quote_failed:no_diagnostics"])
+            # Fallback to the broader historical fetch stack (Yahoo chart/stooq/mock) for
+            # international symbols when live quote providers fail.
+            try:
+                fb_data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
+                fb_tail = fb_data.prices.tail(1)
+                if not fb_tail.empty:
+                    out = {
+                        "tickers": tlist,
+                        "interval": interval,
+                        "lookback_days": lookback,
+                        "rows_returned": int(fb_tail.shape[0]),
+                        "source": f"live_fallback:{getattr(fb_data, 'source', 'unknown')}",
+                        "currencies": {t: _default_currency_for_symbol(t) for t in tlist},
+                        "prices_tail": _to_prices_tail_payload(fb_tail),
+                        "warnings": warnings + ["Live quote provider failed; used historical fallback source."],
+                    }
+                    result = {"ok": True, "data": out}
+                    _set_cached_prices(cache_key, result)
+                    return result
+            except Exception as e:
+                warnings.append(f"live_fallback_failed:{e}")
+
+            out = {
+                "tickers": tlist,
+                "interval": interval,
+                "lookback_days": lookback,
+                "rows_returned": 0,
+                "source": "none",
+                "currencies": {t: "USD" for t in tlist},
+                "prices_tail": {"index": [], "values": {}},
+                "warnings": warnings + ["No live quote available from Twelve Data, yfinance, or fallback sources."],
+            }
+            return {"ok": True, "data": out}
     
     data = None
     try:
         if not tlist:
             raise ValueError("No valid tickers provided after sanitization")
-        data = fetch_prices(tlist, lookback_days=lookback, interval=interval)
+        data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
     except Exception as e:
         warnings.append(str(e))
 
@@ -3022,10 +3586,12 @@ def market_prices(
             "interval": interval,
             "lookback_days": lookback,
             "rows_returned": 0,
+            "source": "none",
             "prices_tail": {"index": [], "values": {}},
             "warnings": warnings,
         }
         result = {"ok": True, "data": out}
+        # Never cache empty/failed fetch results.
         return result
 
     tail = data.prices.tail(25)
@@ -3057,16 +3623,15 @@ def market_prices(
         "interval": interval,
         "lookback_days": lookback,
         "rows_returned": int(tail.shape[0]),
+        "source": getattr(data, "source", "unknown"),
         "currencies": currencies, # NEW field
-        "prices_tail": {
-            "index": [str(x) for x in tail.index],
-            "values": {c: [float(v) for v in tail[c].values] for c in tail.columns},
-        },
+        "prices_tail": _to_prices_tail_payload(tail),
     }
     if warnings:
         out["warnings"] = warnings
     result = {"ok": True, "data": out}
-    _set_cached_prices(cache_key, result)
+    if int(tail.shape[0]) > 0:
+        _set_cached_prices(cache_key, result)
     return result
 
 

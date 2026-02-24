@@ -1,6 +1,20 @@
 {
   "items": [
     {
+      "id": "prt_6b86e62af96e",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 1330.89995,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-24T08:11:42Z"
+    },
+    {
       "id": "prt_ef273137a263",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
