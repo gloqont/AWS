@@ -2,14 +2,34 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTutorial } from './TutorialContext';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 interface TutorialOverlayProps {
   children: React.ReactNode;
 }
 
 const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
-  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial } = useTutorial();
+  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial, completeTutorial } = useTutorial();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [currentPage, setCurrentPage] = useState('');
+
+  // Determine current page from pathname
+  useEffect(() => {
+    if (pathname.includes('/portfolio-optimizer')) {
+      setCurrentPage('portfolio-optimizer');
+    } else if (pathname.includes('/scenario-simulation')) {
+      setCurrentPage('scenario-simulation');
+    } else if (pathname.includes('/tax-advisor')) {
+      setCurrentPage('tax-advisor');
+    } else if (pathname.includes('/tax-impact')) {
+      setCurrentPage('tax-impact');
+    } else {
+      setCurrentPage('');
+    }
+  }, [pathname]);
 
   // Calculate the position and dimensions of the highlighted element
   useEffect(() => {
@@ -40,7 +60,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
   }, [isTutorialActive, currentStep, steps]);
 
   // State to hold the current step data and rect for consistent hook usage
-  const [tutorialState, setTutorialState] = useState<{currentStepData: any, element: HTMLElement | null, rect: DOMRect | null} | null>(null);
+  const [tutorialState, setTutorialState] = useState<{ currentStepData: any, element: HTMLElement | null, rect: DOMRect | null } | null>(null);
 
   // Update tutorial state when tutorial is active
   useEffect(() => {
@@ -54,8 +74,8 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
     }
   }, [isTutorialActive, steps, currentStep, steps.length]);
 
-  
-  
+
+
   // Position the tooltip after it renders
   useEffect(() => {
     if (!isTutorialActive || !tutorialState?.rect) return;
@@ -119,14 +139,33 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
     return <>{children}</>;
   }
 
+  const clearTutorialParam = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('tutorial')) return;
+    params.delete('tutorial');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
+
+  const handleCancel = () => {
+    clearTutorialParam();
+    completeTutorial();
+  };
+
+  const handleFinish = () => {
+    clearTutorialParam();
+    completeTutorial();
+  };
+
   // Render the tutorial overlay when active
   return (
     <>
       {children}
+      {/* Overlay to dim the rest of the screen */}
       <div
-        className="fixed inset-0 z-50"
+        className="fixed inset-0 bg-black/17 z-50 pointer-events-auto"
         style={{ zIndex: 9997 }}
-        onClick={endTutorial}
+        onClick={handleCancel}
       />
 
       {/* Highlight box around the target element with zoom effect */}
@@ -134,10 +173,11 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
         ref={overlayRef}
         className="fixed border-4 border-yellow-400 rounded-xl z-50 animate-pulse shadow-lg shadow-yellow-400/50"
         style={{
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.13)',
           borderRadius: '12px',
           transition: 'all 0.3s ease',
           transform: 'scale(1.05)', // Slight zoom effect
+          animationDuration: '3s',
           zIndex: 9998
         }}
       />
@@ -156,32 +196,31 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
           overflowY: 'auto',
           backdropFilter: 'blur(10px)'
         }}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4">
-          <div className="flex items-start justify-between gap-4">
-            <h3 className="text-xl font-bold text-blue-700 flex items-center gap-2">
-              <span className="bg-blue-100 text-blue-700 rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                {currentStep + 1}
-              </span>
-              {tutorialState?.currentStepData.title}
-            </h3>
-            <button
-              type="button"
-              onClick={endTutorial}
-              className="text-gray-500 hover:text-gray-700 text-lg leading-none"
-              aria-label="Close tutorial"
-              title="Close"
-            >
-              ×
-            </button>
-          </div>
+          <h3 className="text-xl font-bold text-blue-700 flex items-center gap-2">
+            <span className="bg-blue-100 text-blue-700 rounded-full w-6 h-6 flex items-center justify-center text-sm">
+              {currentStep + 1}
+            </span>
+            {tutorialState?.currentStepData.title}
+          </h3>
         </div>
         <p className="text-gray-700 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
 
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0 pt-3 border-t border-gray-200">
-          <div className="text-sm text-gray-600 font-medium">
-            Step {currentStep + 1} of {steps.length}
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-600 font-medium">
+              Step {currentStep + 1} of {steps.length}
+            </div>
+            {currentStep < steps.length - 1 && (
+              <button
+                onClick={handleCancel}
+                className="text-sm text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
+                title="Skip the rest of the tutorial"
+              >
+                Skip Tutorial
+              </button>
+            )}
           </div>
 
           <div className="flex space-x-3">
@@ -195,7 +234,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
             )}
 
             <button
-              onClick={currentStep < steps.length - 1 ? nextStep : endTutorial}
+              onClick={currentStep < steps.length - 1 ? nextStep : handleFinish}
               className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all text-sm font-medium shadow-md"
             >
               {currentStep < steps.length - 1 ? 'Next →' : 'Finish'}

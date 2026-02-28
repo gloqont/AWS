@@ -1,42 +1,38 @@
-# Advisor Dashboard (Admin-only MVP)
+# Gloqont Protocol & Intelligence Engine
+*(Proprietary & Confidential)*
 
-This is a standalone project (not connected to any other dashboard).
+Gloqont is a next-generation analytical platform designed specifically to provide unassailable competitive moats in the portfolio management space. Built using a React/Next.js and Python/FastAPI architecture.
 
-## Features
-- Admin-only login (single account configured via env vars)
-- Portfolio Optimizer / Constructor
-  - Add tickers + weights
-  - Enforces weights sum to 100%
-  - Risk budget enum: LOW / MEDIUM / HIGH
-  - Backend returns a "risk object" contract for future quant services
+## Core Features
+- **Portfolio Construction & Analysis:** Build portfolios with tickers and weights, and calculate expected returns, volatility, drawdowns, and tail risk.
+- **Scenario Simulation Engine:** Natural language trade parsing (e.g., "Increase tech exposure by 12%") hooked into a quantitative simulation engine.
+- **Monte Carlo Risk Projections:** Realistic path generation using geometric drift models and volatility drag to simulate future best, median, and worst-case scenarios.
+- **Multi-Jurisdiction Tax Engine:** Pre-execution tax analysis covering realizing gains, execution friction, and country-specific regimes (e.g., US Short/Long-Term Capital Gains, NL Box 3 Wealth Tax).
+- **Macro Shock Modeling:** Simulate the impact of specific market shocks on portfolio components.
 
-## Requirements
-- Node.js 18+ (recommended 20+)
-- Python 3.10+ (recommended 3.11)
+## Setup & Execution
 
-## Setup
-
-### 1) Backend (FastAPI)
+### 1) Backend Intelligence Engine (FastAPI)
+The central nervous system computing tax vectors, market shocks, and temporal predictions.
 ```bash
 cd apps/api
-cp .env.example .env
-# edit .env and set ADMIN_PASSWORD + SESSION_SECRET
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv_win
+.\venv_win\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python -m uvicorn main:app --reload --port 8002
 ```
-API docs: http://localhost:8000/docs
+*API Endpoint / Docs:* http://localhost:8002/docs
 
-### 2) Frontend (Next.js)
+### 2) Frontend Dashboard (Next.js 14)
+The visualization layer for the intelligence engine.
 ```bash
 cd apps/web
-cp .env.local.example .env.local
 npm install
-npm run dev
+npm run dev -- -p 3002
 ```
-Open: http://localhost:3000
+*Dashboard Access:* http://localhost:3002
 
-## Login
-- Go to http://localhost:3000/login
-- Use ADMIN_USERNAME / ADMIN_PASSWORD from `apps/api/.env`
+
+## License
+Copyright © 2024-Present Gloqont. All Rights Reserved.
+This software is strictly confidential and proprietary. See `LICENSE` for details.

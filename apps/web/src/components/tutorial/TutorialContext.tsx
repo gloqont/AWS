@@ -18,6 +18,7 @@ interface TutorialContextType {
   nextStep: () => void;
   prevStep: () => void;
   endTutorial: () => void;
+  completeTutorial: () => void;
   goToStep: (stepIndex: number) => void;
   setCurrentStep: (step: number) => void;
 }
@@ -43,7 +44,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
 
   // Check if user has completed the first-time tutorial
   useEffect(() => {
-    const hasCompletedTutorial = localStorage.getItem('hasCompletedTutorial');
+    const hasCompletedTutorial = localStorage.getItem('hasCompletedTutorial_v2');
     if (!hasCompletedTutorial) {
       // Optionally start the first-time tutorial here
     }
@@ -59,7 +60,9 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     if (currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
     } else {
-      endTutorial();
+      // Instead of ending the tutorial, we should allow TutorialFlowManager to handle navigation
+      // So we increment currentStep beyond the length to signal completion
+      setCurrentStep(prev => prev + 1);
     }
   };
 
@@ -79,9 +82,11 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
     setIsTutorialActive(false);
     setCurrentStep(0);
     setSteps([]);
+  };
 
-    // Mark tutorial as completed in localStorage
-    localStorage.setItem('hasCompletedTutorial', 'true');
+  const completeTutorial = () => {
+    endTutorial();
+    localStorage.setItem('hasCompletedTutorial_v2', 'true');
   };
 
   return (
@@ -94,6 +99,7 @@ export const TutorialProvider: React.FC<TutorialProviderProps> = ({ children }) 
         nextStep,
         prevStep,
         endTutorial,
+        completeTutorial,
         goToStep,
         setCurrentStep: (step: number) => setCurrentStep(step),
       }}
