@@ -4,6 +4,7 @@ import time
 import secrets
 import math
 import asyncio
+from urllib.parse import urlencode
 from typing import List, Literal, Optional, Dict, Any
 
 import numpy as np
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Response, Request, HTTPException
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel, Field, field_validator
 import traceback
@@ -44,10 +45,23 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3002,http://127.0.0.1:3002")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
+
+# Cognito OAuth configuration
+COGNITO_REGION = os.getenv("COGNITO_REGION", "").strip()
+COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "").strip()
+COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "").strip()
+COGNITO_CLIENT_SECRET = os.getenv("COGNITO_CLIENT_SECRET", "").strip()
+COGNITO_DOMAIN = os.getenv("COGNITO_DOMAIN", "").strip()  # host only, no https://
+COGNITO_API_DOMAIN = os.getenv("COGNITO_API_DOMAIN", COGNITO_DOMAIN).strip()  # optional override for token/userInfo host
+COGNITO_REDIRECT_URI = os.getenv("COGNITO_REDIRECT_URI", "http://localhost:3000/api/v1/auth/callback").strip()
+COGNITO_LOGOUT_REDIRECT_URI = os.getenv("COGNITO_LOGOUT_REDIRECT_URI", "http://localhost:3000/login").strip()
+COGNITO_SCOPES = os.getenv("COGNITO_SCOPES", "openid email profile").strip()
 
 serializer = URLSafeTimedSerializer(SESSION_SECRET)
 SESSION_COOKIE = "advisor_session"
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 hours
+OAUTH_STATE_MAX_AGE_SECONDS = 60 * 10  # 10 minutes
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 PORTFOLIOS_PATH = os.path.join(DATA_DIR, "portfolios.json")
@@ -421,17 +435,77 @@ def validate_portfolio(p: PortfolioBase, tolerance: float = 0.01) -> ValidationO
 # ----------------------------
 # Auth helpers
 # ----------------------------
+def _cognito_enabled() -> bool:
+    return bool(COGNITO_DOMAIN and COGNITO_CLIENT_ID and COGNITO_REDIRECT_URI)
+
+
+def _build_cognito_url(path: str, *, api: bool = False) -> str:
+    host_value = COGNITO_API_DOMAIN if api else COGNITO_DOMAIN
+    host = host_value.removeprefix("https://").removesuffix("/")
+    return f"https://{host}{path}"
+
+
+def _safe_next_path(next_path: Optional[str]) -> str:
+    if not next_path:
+        return "/dashboard/portfolio-optimizer"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return "/dashboard/portfolio-optimizer"
+    return next_path
+
+
 def require_admin(request: Request):
-    # Bypass auth checks in development: always return a fake admin user.
-    # This allows the frontend to call API endpoints without performing login.
-    return {"role": "admin", "sub": "admin"}
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except BadSignature:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    return data
 
 
 # ----------------------------
 # Auth routes
 # ----------------------------
+@app.get("/api/v1/auth/login")
+def cognito_login(next: Optional[str] = None, mode: Optional[str] = None):
+    if not _cognito_enabled():
+        raise HTTPException(status_code=500, detail="Cognito auth is not configured on the server")
+
+    next_path = _safe_next_path(next)
+    oauth_state = serializer.dumps(
+        {
+            "next": next_path,
+            "mode": mode if mode in {"signup", "login"} else "login",
+            "nonce": secrets.token_hex(12),
+            "iat": int(time.time()),
+        },
+        salt="oauth_state",
+    )
+
+    params = {
+        "response_type": "code",
+        "client_id": COGNITO_CLIENT_ID,
+        "redirect_uri": COGNITO_REDIRECT_URI,
+        "scope": COGNITO_SCOPES,
+        "state": oauth_state,
+    }
+    if mode == "signup":
+        params["screen_hint"] = "signup"
+
+    authorize_url = _build_cognito_url(f"/oauth2/authorize?{urlencode(params)}")
+    return RedirectResponse(url=authorize_url, status_code=307)
+
+
 @app.post("/api/v1/auth/login")
 def login(body: LoginIn, response: Response):
+    # Backward-compatible local admin login for environments not yet migrated to Cognito.
+    if _cognito_enabled():
+        raise HTTPException(status_code=400, detail="Use GET /api/v1/auth/login for Cognito sign-in")
+
     if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -446,12 +520,96 @@ def login(body: LoginIn, response: Response):
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
-        secure=False,
+        secure=SESSION_COOKIE_SECURE,
         samesite="lax",
         max_age=SESSION_MAX_AGE_SECONDS,
         path="/",
     )
     return {"ok": True}
+
+
+@app.get("/api/v1/auth/callback")
+def cognito_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None, error_description: Optional[str] = None, response: Response = None):
+    if not _cognito_enabled():
+        raise HTTPException(status_code=500, detail="Cognito auth is not configured on the server")
+
+    if error:
+        raise HTTPException(status_code=401, detail=f"Cognito error: {error} ({error_description or 'no description'})")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing OAuth authorization code")
+    if not state:
+        raise HTTPException(status_code=400, detail="Missing OAuth state")
+
+    try:
+        state_data = serializer.loads(state, salt="oauth_state", max_age=OAUTH_STATE_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise HTTPException(status_code=401, detail="OAuth state expired")
+    except BadSignature:
+        raise HTTPException(status_code=401, detail="Invalid OAuth state")
+
+    next_path = _safe_next_path(state_data.get("next"))
+    token_url = _build_cognito_url("/oauth2/token", api=True)
+    userinfo_url = _build_cognito_url("/oauth2/userInfo", api=True)
+
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": COGNITO_CLIENT_ID,
+        "code": code,
+        "redirect_uri": COGNITO_REDIRECT_URI,
+    }
+    if COGNITO_CLIENT_SECRET:
+        token_payload["client_secret"] = COGNITO_CLIENT_SECRET
+
+    try:
+        token_res = httpx.post(
+            token_url,
+            data=token_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10.0,
+        )
+        token_res.raise_for_status()
+        token_data = token_res.json()
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Failed token exchange with Cognito: {e}")
+
+    access_token = token_data.get("access_token")
+    id_token = token_data.get("id_token")
+    if not access_token or not id_token:
+        raise HTTPException(status_code=401, detail="Cognito token response missing required tokens")
+
+    try:
+        userinfo_res = httpx.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10.0,
+        )
+        userinfo_res.raise_for_status()
+        userinfo = userinfo_res.json()
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Failed to retrieve Cognito user profile: {e}")
+
+    session = {
+        "sub": userinfo.get("sub"),
+        "email": userinfo.get("email"),
+        "role": "user",
+        "provider": "cognito",
+        "iat": int(time.time()),
+        "nonce": secrets.token_hex(8),
+    }
+    token = serializer.dumps(session)
+    response = response or Response()
+    response.status_code = 307
+    response.headers["Location"] = next_path
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
+    )
+    return response
 
 
 @app.post("/api/v1/auth/logout")
@@ -460,10 +618,38 @@ def logout(response: Response):
     return {"ok": True}
 
 
+@app.get("/api/v1/auth/logout")
+def logout_redirect(next: Optional[str] = None, response: Response = None):
+    next_path = _safe_next_path(next or "/login")
+
+    response = response or Response()
+    response.delete_cookie(key=SESSION_COOKIE, path="/")
+
+    if not _cognito_enabled():
+        response.status_code = 307
+        response.headers["Location"] = next_path
+        return response
+
+    logout_target = _build_cognito_url(
+        f"/logout?{urlencode({'client_id': COGNITO_CLIENT_ID, 'logout_uri': COGNITO_LOGOUT_REDIRECT_URI})}"
+    )
+    response.status_code = 307
+    response.headers["Location"] = logout_target
+    return response
+
+
 @app.get("/api/v1/auth/me")
 def me(request: Request):
     data = require_admin(request)
-    return {"ok": True, "user": {"username": "admin", "role": data["role"]}}
+    return {
+        "ok": True,
+        "user": {
+            "sub": data.get("sub"),
+            "email": data.get("email"),
+            "role": data.get("role", "user"),
+            "provider": data.get("provider", "local"),
+        },
+    }
 
 
 # ----------------------------

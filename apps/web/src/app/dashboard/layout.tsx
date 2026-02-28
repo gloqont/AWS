@@ -23,6 +23,8 @@ const nav = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [authReady, setAuthReady] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [isTaxWizardOpen, setIsTaxWizardOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -77,23 +79,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [isTaxWizardOpen, pathname]); // Reload when wizard closes or page changes
 
+  // Gate dashboard routes behind backend session auth.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        await apiFetch("/api/v1/auth/me");
+        if (!active) return;
+        setIsAuthed(true);
+      } catch {
+        if (!active) return;
+        setIsAuthed(false);
+        router.replace(`/login?next=${encodeURIComponent(pathname || "/dashboard/portfolio-optimizer")}`);
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [pathname, router]);
+
   async function logout() {
-    try {
-      await apiFetch("/api/v1/auth/logout", { method: "POST" });
-    } finally {
-      // Clear auth-related and session-specific state on logout
-      // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
-      localStorage.removeItem("hasCompletedTutorial_v2");
-      localStorage.removeItem("gloqont_tax_profile");
-      localStorage.removeItem("portfolio_rows");
-      localStorage.removeItem("portfolio_name");
-      localStorage.removeItem("portfolio_risk");
+    // Clear auth-related and session-specific state on logout
+    // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
+    localStorage.removeItem("hasCompletedTutorial_v2");
+    localStorage.removeItem("gloqont_tax_profile");
+    localStorage.removeItem("portfolio_rows");
+    localStorage.removeItem("portfolio_name");
+    localStorage.removeItem("portfolio_risk");
 
-      sessionStorage.removeItem("tutorialShownThisSession");
-      sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
+    sessionStorage.removeItem("tutorialShownThisSession");
+    sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
 
-      window.location.href = "/login";
-    }
+    // Use backend redirect to clear local session and Cognito hosted session.
+    window.location.href = "/api/v1/auth/logout?next=/login";
   }
 
   const handleWizardComplete = (profile: TaxProfile) => {
@@ -115,6 +136,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const accountTypes = savedProfile
     ? (COUNTRY_ACCOUNT_TYPES[savedProfile.taxCountry] || DEFAULT_ACCOUNT_TYPES)
     : {};
+
+  if (!authReady || !isAuthed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white/70">
+        Checking session...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex">
