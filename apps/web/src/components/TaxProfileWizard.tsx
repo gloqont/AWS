@@ -117,6 +117,7 @@ interface TaxProfileWizardProps {
     isOpen: boolean;
     initialCountry?: string; // New prop
     onComplete: (profile: TaxProfile) => void;
+    onSkip?: () => void;
     onClose: () => void;
 }
 

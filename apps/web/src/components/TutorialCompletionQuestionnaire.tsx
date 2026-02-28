@@ -28,6 +28,7 @@ export interface UserProfile {
 interface QuestionnaireProps {
     isOpen: boolean;
     onComplete: (profile: UserProfile) => void;
+    onSkip?: () => void;
     initialProfile?: Partial<UserProfile>;
 }
 
