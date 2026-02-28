@@ -149,12 +149,13 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
 
   const handleCancel = () => {
     clearTutorialParam();
-    completeTutorial();
+    endTutorial();
   };
 
   const handleFinish = () => {
     clearTutorialParam();
-    completeTutorial();
+    // Signal step completion to TutorialFlowManager so it can chain page tutorials.
+    nextStep();
   };
 
   // Render the tutorial overlay when active

@@ -68,6 +68,9 @@ const TutorialFlowManager: React.FC<TutorialFlowManagerProps> = ({ children }) =
         // Tax Impact completed, end the tutorial
         setActiveTutorialName(null);
         setTimeout(() => completeTutorial(), 100);
+      } else {
+        // Fallback: if we cannot identify sequence context, complete cleanly.
+        setTimeout(() => completeTutorial(), 100);
       }
     }
   }, [isTutorialActive, currentStep, steps, completeTutorial, activeTutorialName, router]);

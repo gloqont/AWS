@@ -28,6 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [collapsed, setCollapsed] = useState(false);
   const [isTaxWizardOpen, setIsTaxWizardOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isLightTheme, setIsLightTheme] = useState(false);
   const [savedProfile, setSavedProfile] = useState<TaxProfile | null>(null);
 
   // Persist collapsed state
@@ -47,8 +48,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const theme = localStorage.getItem("theme_preference");
     if (theme === "light") {
       document.documentElement.classList.add("theme-light");
+      setIsLightTheme(true);
     } else {
       document.documentElement.classList.remove("theme-light");
+      setIsLightTheme(false);
     }
   }, []);
 
@@ -319,9 +322,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 if (html.classList.contains("theme-light")) {
                   html.classList.remove("theme-light");
                   localStorage.setItem("theme_preference", "dark");
+                  setIsLightTheme(false);
                 } else {
                   html.classList.add("theme-light");
                   localStorage.setItem("theme_preference", "light");
+                  setIsLightTheme(true);
                 }
               }}
               className={[
@@ -330,7 +335,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               ].join(" ")}
               title="Toggle Theme"
             >
-              {collapsed ? "◑" : "Toggle Theme"}
+              {collapsed ? (isLightTheme ? "🌙" : "☀️") : `${isLightTheme ? "🌙" : "☀️"} Toggle Theme`}
             </button>
             <button
               onClick={logout}
