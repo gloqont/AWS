@@ -23,10 +23,7 @@ export default function PortfolioOptimizerPage() {
   const searchParams = useSearchParams();
   const [name, setName] = useState("My Portfolio");
   const [riskBudget, setRiskBudget] = useState<RiskBudget>("MEDIUM");
-  const [rows, setRows] = useState<Row[]>([
-    { ticker: "AAPL", quantity: "10" },
-    { ticker: "MSFT", quantity: "5" },
-  ]);
+  const [rows, setRows] = useState<Row[]>([]);
 
   // Hydrate state from localStorage AFTER mount to prevent SSR mismatch
   const [mounted, setMounted] = useState(false);
@@ -42,7 +39,7 @@ export default function PortfolioOptimizerPage() {
       const savedRows = localStorage.getItem("portfolio_rows");
       const savedProfileStr = localStorage.getItem("gloqont_user_profile");
 
-      if (savedRows) {
+      if (savedRows && savedRows !== "[]") {
         setRows(JSON.parse(savedRows));
       } else if (savedProfileStr) {
         const profile = JSON.parse(savedProfileStr);
@@ -52,17 +49,33 @@ export default function PortfolioOptimizerPage() {
             { ticker: "TCS.NS", quantity: "15" },
             { ticker: "HDFCBANK.NS", quantity: "20" },
           ]);
+        } else {
+          setRows([
+            { ticker: "AAPL", quantity: "10" },
+            { ticker: "MSFT", quantity: "5" },
+          ]);
         }
+      } else {
+        setRows([
+          { ticker: "AAPL", quantity: "10" },
+          { ticker: "MSFT", quantity: "5" },
+        ]);
       }
     } catch (e) {
       console.error("Failed to load portfolio from localStorage", e);
+      setRows([
+        { ticker: "AAPL", quantity: "10" },
+        { ticker: "MSFT", quantity: "5" },
+      ]);
     }
   }, []);
 
-  // Save state to localStorage whenever it changes
+  // Save state to localStorage whenever it changes, but ONLY AFTER mounted
   useEffect(() => {
-    localStorage.setItem("portfolio_rows", JSON.stringify(rows));
-  }, [rows]);
+    if (mounted && rows.length > 0) {
+      localStorage.setItem("portfolio_rows", JSON.stringify(rows));
+    }
+  }, [rows, mounted]);
 
   useEffect(() => {
     localStorage.setItem("portfolio_name", name);

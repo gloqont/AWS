@@ -214,6 +214,21 @@ class CanonicalAssetResolver:
                 currency='USD'
             )
         
+        # Auto-resolve Indian tickers: try .NS and .BO suffixes for bare symbols
+        if '.' not in symbol:
+            for suffix in ['.NS', '.BO']:
+                suffixed = symbol + suffix
+                if suffixed in self.nifty_50_symbols:
+                    info = self.nifty_50_symbols[suffixed]
+                    return AssetInfo(
+                        symbol=suffixed,
+                        name=info['name'],
+                        country=info['country'],
+                        sector=info['sector'],
+                        asset_type='STOCK',
+                        currency=_currency_from_symbol(suffixed, info['country'])
+                    )
+        
         # Try to validate with yfinance as a fallback
         try:
             ticker = yf.Ticker(symbol)

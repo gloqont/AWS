@@ -740,6 +740,7 @@ Output strict JSON with this schema:
       "instrument": "TICKER (uppercase)",
       "size_percent": float | null,
       "size_usd": float | null,
+      "size_shares": float | null,
       "timing_type": "immediate" | "delay",
       "delay_days": int (default 0)
     }}
@@ -836,6 +837,7 @@ JSON: {{"intent":"Buy more TCS","decision_type":"trade","actions":[{{"action":"b
                     direction=direction_map.get(direction_str, Direction.BUY),
                     size_percent=action_data.get("size_percent"),
                     size_usd=action_data.get("size_usd"),
+                    size_shares=action_data.get("size_shares"),
                     timing=timing,
                     constraints=constraints
                 )

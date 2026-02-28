@@ -741,6 +741,9 @@ export default function ScenarioSimulationPage() {
                               <span className={`font-bold ${d.weight_delta >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                                 {fmtPct(d.weight_delta * 100)}
                               </span>
+                              <span className="text-[#D4A853]/80 text-xs border-l border-white/10 pl-3">
+                                {fmtMoney(Math.abs(d.weight_delta) * totalValue, JURISDICTIONS[taxCountry]?.currency)}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -756,8 +759,8 @@ export default function ScenarioSimulationPage() {
                 const scenarioVol = (cmp.scenario_volatility ?? 15) / 100; // annual vol as decimal
 
                 // REALISM FIX: Drift should compensate for volatility drag (Merton's model)
-                // Assume 4.3% risk free rate, 0.3 Sharpe ratio premium
-                const expectedAnnualReturn = 0.043 + (scenarioVol * 0.3);
+                // Assume 4.3% risk free rate, 0.5 Sharpe ratio premium
+                const expectedAnnualReturn = 0.043 + (scenarioVol * 0.5);
                 const dailyGeometricReturn = expectedAnnualReturn / 252;
                 const dailyVol = scenarioVol / Math.sqrt(252);
 
@@ -1250,9 +1253,7 @@ export default function ScenarioSimulationPage() {
 
                     {/* Net Consequence Summary */}
                     <div className="rounded-xl bg-gradient-to-br from-black/60 to-[#D4A853]/10 border border-[#D4A853]/20 p-5 mt-6 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-4 opacity-10 filter blur-[2px]">
-                        <span className="text-6xl">💰</span>
-                      </div>
+
                       <div className="text-sm font-bold text-[#D4A853] uppercase tracking-wider mb-4 border-b border-[#D4A853]/20 pb-2">Net Consequence Summary</div>
                       <div className="overflow-x-auto relative z-10">
                         <table className="w-full text-sm">
@@ -1307,6 +1308,87 @@ export default function ScenarioSimulationPage() {
                   </EmberCard>
                 );
               })()}
+
+              {/* ── 8A. MOAT: Time-Travel Trade Optimizer ── */}
+              {unifiedResult?.moat_time_travel?.applicable && (() => {
+                const tt = unifiedResult.moat_time_travel;
+                return (
+                  <EmberCard title="Future Taxes Optimizer" subtitle="Optimal Execution Timing">
+                    <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-cyan-500/20 rounded-xl p-5">
+                      <div className="text-sm text-cyan-300 font-medium mb-4">{tt.message}</div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Today ({tt.current_rate_label})</div>
+                          <div className="text-xl font-mono text-red-400 font-bold">{fmtMoney(tt.current_tax, JURISDICTIONS[taxCountry]?.currency)}</div>
+                        </div>
+                        <div className="text-center flex flex-col items-center justify-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Wait</div>
+                          <div className="text-xl font-mono text-cyan-400 font-bold">{tt.wait_days} days</div>
+                          <div className="text-[10px] text-white/30 mt-1">→ {tt.optimized_rate_label}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Optimized Tax</div>
+                          <div className="text-xl font-mono text-emerald-400 font-bold">{fmtMoney(tt.optimized_tax, JURISDICTIONS[taxCountry]?.currency)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 text-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-2.5 px-4">
+                        <span className="text-xs text-white/50 uppercase tracking-wider mr-2">You Save</span>
+                        <span className="text-lg font-mono font-bold text-emerald-400">{fmtMoney(tt.savings, JURISDICTIONS[taxCountry]?.currency)}</span>
+                      </div>
+                    </div>
+                  </EmberCard>
+                );
+              })()}
+
+              {/* ── 8B. MOAT: Tax-Loss Harvest Offset ── */}
+              {unifiedResult?.moat_tax_harvest?.applicable && (() => {
+                const th = unifiedResult.moat_tax_harvest;
+                return (
+                  <EmberCard title="Tax-Loss Harvest Offset" subtitle="Neutralize Your Tax Liability">
+                    <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-xl p-5">
+                      <div className="text-sm text-amber-300 font-medium mb-4">{th.message}</div>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Capital Gain</div>
+                          <div className="text-xl font-mono text-red-400 font-bold">{fmtMoney(th.trade_gain, JURISDICTIONS[taxCountry]?.currency)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Available Offset</div>
+                          <div className="text-xl font-mono text-emerald-400 font-bold">-{fmtMoney(th.total_offset, JURISDICTIONS[taxCountry]?.currency)}</div>
+                        </div>
+                      </div>
+                      {/* Candidate table */}
+                      <div className="bg-black/30 rounded-lg overflow-hidden border border-white/5">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-white/40 uppercase tracking-wider text-[10px] border-b border-white/5">
+                              <th className="px-3 py-2 text-left">Asset</th>
+                              <th className="px-3 py-2 text-right">Return</th>
+                              <th className="px-3 py-2 text-right">Est. Loss</th>
+                              <th className="px-3 py-2 text-right">Offset</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {th.offset_candidates.map((c: any, i: number) => (
+                              <tr key={i} className="border-b border-white/5">
+                                <td className="px-3 py-2 text-white font-mono font-bold">{c.symbol}</td>
+                                <td className="px-3 py-2 text-right text-red-400 font-mono">{c.return_pct.toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-right text-white/70 font-mono">{fmtMoney(c.estimated_loss, JURISDICTIONS[taxCountry]?.currency)}</td>
+                                <td className="px-3 py-2 text-right text-emerald-400 font-mono">{fmtMoney(c.offset_amount, JURISDICTIONS[taxCountry]?.currency)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-2.5 px-4">
+                        <span className="text-xs text-white/50 uppercase tracking-wider">Tax Savings</span>
+                        <span className="text-lg font-mono font-bold text-emerald-400">{fmtMoney(th.savings, JURISDICTIONS[taxCountry]?.currency)}</span>
+                      </div>
+                    </div>
+                  </EmberCard>
+                );
+              })()}
+
 
               {/* ── 8. Final Verdict Banner ── */}
               {scr && (

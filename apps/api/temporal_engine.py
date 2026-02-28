@@ -612,6 +612,13 @@ class TemporalSimulationEngine:
             
             size = action.get_effective_size_percent(current_value, current_price=price_to_use)
             
+            # SAFETY CAP: Prevent any single trade from exceeding 100% of portfolio
+            # This catches cases where "Buy 100 shares" is misinterpreted as 1000% allocation
+            MAX_SINGLE_TRADE_PCT = 100.0
+            if abs(size) > MAX_SINGLE_TRADE_PCT:
+                print(f"[SIZE CAP] Capping trade size from {size:.1f}% to {MAX_SINGLE_TRADE_PCT}% for {symbol}")
+                size = MAX_SINGLE_TRADE_PCT if size > 0 else -MAX_SINGLE_TRADE_PCT
+            
             # Convert size to decimal weight
             size_weight = size / 100.0
             

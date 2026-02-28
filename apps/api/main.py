@@ -752,6 +752,374 @@ def decision_parse(request: Request, body: DecisionAnalyzeIn):
     return {"ok": True, "decision": decision.dict()}
 
 
+# ─────────────────────────────────────────────
+# MOAT 1: Time-Travel Trade Optimizer
+# ─────────────────────────────────────────────
+def compute_time_travel_insight(
+    decision, tax_analysis, body, portfolio
+) -> dict:
+    """Scan holding period to suggest a better execution date for tax savings."""
+    try:
+        if not tax_analysis or tax_analysis.get("error"):
+            return {"applicable": False}
+
+        current_holding = body.tax_holding_period or "short_term"
+        if current_holding != "short_term":
+            return {"applicable": False, "reason": "Already long-term"}
+
+        current_tax = tax_analysis.get("total_tax_liability", 0)
+        if current_tax <= 0:
+            return {"applicable": False}
+
+        est_gain = tax_analysis.get("estimated_gain_usd", 0)
+        if est_gain <= 0:
+            return {"applicable": False}
+
+        # Jurisdiction-aware LT threshold days
+        LT_THRESHOLDS = {
+            "US": 365, "IN": 365, "CA": 365, "GB": 365,
+            "DE": 365, "FR": 730, "NL": 0,  # NL has no CG tax (Box 3 wealth tax)
+        }
+        jurisdiction = body.tax_jurisdiction or "US"
+        lt_days = LT_THRESHOLDS.get(jurisdiction, 365)
+        if lt_days == 0:
+            return {"applicable": False, "reason": "No CG tax in this jurisdiction"}
+
+        # Approximate days already held (from horizon context)
+        days_held = body.horizon_days  # conservative proxy
+        wait_days = max(0, lt_days - days_held)
+
+        if wait_days <= 0:
+            return {"applicable": False, "reason": "Already qualifies as long-term"}
+
+        # Estimate LT tax using known rate differentials
+        LT_RATE_APPROX = {"US": 0.15, "IN": 0.10, "CA": 0.13, "GB": 0.10, "DE": 0.26, "FR": 0.30}
+        ST_RATE_APPROX = {"US": 0.30, "IN": 0.15, "CA": 0.27, "GB": 0.20, "DE": 0.26, "FR": 0.30}
+        lt_rate = LT_RATE_APPROX.get(jurisdiction, 0.15)
+        st_rate = ST_RATE_APPROX.get(jurisdiction, 0.30)
+
+        optimized_tax = round(est_gain * lt_rate, 2)
+        savings = round(current_tax - optimized_tax, 2)
+
+        if savings <= 0:
+            return {"applicable": False, "reason": "No savings from waiting"}
+
+        return {
+            "applicable": True,
+            "current_tax": round(current_tax, 2),
+            "optimized_tax": optimized_tax,
+            "savings": savings,
+            "wait_days": wait_days,
+            "current_rate_label": f"Short-Term ({st_rate*100:.0f}%)",
+            "optimized_rate_label": f"Long-Term ({lt_rate*100:.0f}%)",
+            "message": f"If you wait {wait_days} days, this becomes Long-Term Capital Gains and you save {savings:,.2f} in taxes.",
+        }
+    except Exception as e:
+        print(f"MOAT TIME-TRAVEL WARNING: {e}")
+        return {"applicable": False}
+
+
+# ─────────────────────────────────────────────
+# MOAT 2: Automated Tax-Loss Harvest Offset
+# ─────────────────────────────────────────────
+def compute_tax_loss_harvest(
+    decision, portfolio, tax_analysis
+) -> dict:
+    """Scan portfolio for underwater assets to offset capital gain from proposed trade."""
+    try:
+        if not tax_analysis or tax_analysis.get("error"):
+            return {"applicable": False}
+
+        est_gain = tax_analysis.get("estimated_gain_usd", 0)
+        if est_gain <= 0:
+            return {"applicable": False, "reason": "No capital gain to offset"}
+
+        positions = portfolio.get("positions", [])
+        if not positions:
+            return {"applicable": False}
+
+        total_value = portfolio.get("total_value", 100000)
+        trade_symbols = set(
+            a.symbol.upper() for a in decision.actions
+        )
+
+        # Fetch recent prices to find underwater positions
+        other_tickers = [
+            p["ticker"] for p in positions
+            if p["ticker"].upper() not in trade_symbols
+        ]
+        if not other_tickers:
+            return {"applicable": False, "reason": "No other positions to harvest"}
+
+        try:
+            price_result = fetch_prices(
+                tickers=other_tickers, lookback_days=90, cache_ttl_seconds=300
+            )
+        except Exception:
+            return {"applicable": False, "reason": "Could not fetch price data"}
+
+        # Find positions with negative returns (underwater)
+        candidates = []
+        for ticker in other_tickers:
+            if ticker not in price_result.prices.columns:
+                continue
+            prices = price_result.prices[ticker].dropna()
+            if len(prices) < 2:
+                continue
+            start_price = float(prices.iloc[0])
+            end_price = float(prices.iloc[-1])
+            if start_price <= 0:
+                continue
+            ret_pct = ((end_price - start_price) / start_price) * 100
+            if ret_pct < -2.0:  # At least 2% underwater
+                # Estimate loss in USD
+                pos_weight = next(
+                    (p["weight"] for p in positions if p["ticker"] == ticker), 0
+                )
+                position_value = total_value * pos_weight
+                estimated_loss = abs(position_value * (ret_pct / 100.0))
+                candidates.append({
+                    "symbol": ticker,
+                    "return_pct": round(ret_pct, 2),
+                    "estimated_loss": round(estimated_loss, 2),
+                    "offset_amount": round(min(estimated_loss, est_gain), 2),
+                    "position_weight_pct": round(pos_weight * 100, 1),
+                })
+
+        if not candidates:
+            return {"applicable": False, "reason": "No underwater positions found"}
+
+        # Sort by offset potential (highest loss first)
+        candidates.sort(key=lambda x: x["estimated_loss"], reverse=True)
+        top_candidates = candidates[:3]
+
+        total_offset = sum(c["offset_amount"] for c in top_candidates)
+        remaining_gain = max(0, est_gain - total_offset)
+
+        # Estimate tax savings from offset
+        current_total_tax = tax_analysis.get("total_tax_liability", 0)
+        effective_rate = (
+            tax_analysis.get("effective_gain_tax_rate", 0) / 100.0
+            if tax_analysis.get("effective_gain_tax_rate", 0) > 0
+            else (current_total_tax / est_gain if est_gain > 0 else 0)
+        )
+        net_tax_after_offset = round(remaining_gain * effective_rate, 2)
+        savings = round(current_total_tax - net_tax_after_offset, 2)
+
+        return {
+            "applicable": True,
+            "trade_gain": round(est_gain, 2),
+            "offset_candidates": top_candidates,
+            "total_offset": round(total_offset, 2),
+            "remaining_gain": round(remaining_gain, 2),
+            "net_tax_after_offset": net_tax_after_offset,
+            "savings": max(0, savings),
+            "message": (
+                f"This trade generates a {est_gain:,.2f} capital gain. "
+                f"Selling {top_candidates[0]['symbol']} (currently at {top_candidates[0]['return_pct']:.1f}%) "
+                f"would offset {top_candidates[0]['offset_amount']:,.2f}, saving ~{savings:,.2f} in tax."
+            ),
+        }
+    except Exception as e:
+        print(f"MOAT TAX-HARVEST WARNING: {e}")
+        return {"applicable": False}
+
+
+# ─────────────────────────────────────────────
+# MOAT 3: Hidden Correlation / Contagion Risk
+# ─────────────────────────────────────────────
+
+# Country-aware factor proxies for correlation analysis
+COUNTRY_FACTOR_PROXIES = {
+    "US": {
+        "Market": "SPY",
+        "Interest Rates": "TLT",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "UUP",
+    },
+    "IN": {
+        "Market": "^NSEI",
+        "Interest Rates": "^IRX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "USDINR=X",
+    },
+    "GB": {
+        "Market": "^FTSE",
+        "Interest Rates": "^TNX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "GBPUSD=X",
+    },
+    "DE": {
+        "Market": "^STOXX50E",
+        "Interest Rates": "^TNX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "EURUSD=X",
+    },
+    "FR": {
+        "Market": "^STOXX50E",
+        "Interest Rates": "^TNX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "EURUSD=X",
+    },
+    "NL": {
+        "Market": "^STOXX50E",
+        "Interest Rates": "^TNX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "EURUSD=X",
+    },
+    "CA": {
+        "Market": "^GSPTSE",
+        "Interest Rates": "^TNX",
+        "Inflation Hedge": "GLD",
+        "Currency Strength": "CADUSD=X",
+    },
+}
+
+# Human-readable factor labels per country
+COUNTRY_FACTOR_LABELS = {
+    "US": {"Market": "US Market (S&P 500)", "Interest Rates": "US Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "USD Strength"},
+    "IN": {"Market": "Indian Market (Nifty 50)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "USD/INR Exchange Rate"},
+    "GB": {"Market": "UK Market (FTSE 100)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "GBP/USD Exchange Rate"},
+    "DE": {"Market": "EU Market (Euro Stoxx 50)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "EUR/USD Exchange Rate"},
+    "FR": {"Market": "EU Market (Euro Stoxx 50)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "EUR/USD Exchange Rate"},
+    "NL": {"Market": "EU Market (Euro Stoxx 50)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "EUR/USD Exchange Rate"},
+    "CA": {"Market": "Canadian Market (TSX)", "Interest Rates": "Global Interest Rates", "Inflation Hedge": "Inflation (Gold)", "Currency Strength": "CAD/USD Exchange Rate"},
+}
+
+def compute_hidden_correlation(
+    decision, portfolio, comparison, jurisdiction="US"
+) -> dict:
+    """Analyze structural factor exposures before/after the proposed trade."""
+    try:
+        positions = portfolio.get("positions", [])
+        if not positions:
+            return {"applicable": False}
+
+        # Collect all tickers (portfolio + new trade targets)
+        portfolio_tickers = [p["ticker"] for p in positions]
+        trade_tickers = [a.symbol for a in decision.actions]
+        all_tickers = list(set(portfolio_tickers + trade_tickers))
+
+        # Select country-aware factor proxies (fallback to US)
+        factor_proxies = COUNTRY_FACTOR_PROXIES.get(jurisdiction, COUNTRY_FACTOR_PROXIES["US"])
+        factor_labels = COUNTRY_FACTOR_LABELS.get(jurisdiction, COUNTRY_FACTOR_LABELS["US"])
+
+        factor_tickers = list(factor_proxies.values())
+        fetch_tickers = list(set(all_tickers + factor_tickers))
+
+        try:
+            price_result = fetch_prices(
+                tickers=fetch_tickers, lookback_days=252, cache_ttl_seconds=600
+            )
+            returns_df = price_result.returns
+        except Exception:
+            return {"applicable": False, "reason": "Could not fetch price data for factor analysis"}
+
+        if returns_df is None or returns_df.empty:
+            return {"applicable": False}
+
+        # Build weight vectors (before and after)
+        total_val = portfolio.get("total_value", 100000)
+        weights_before = {}
+        for p in positions:
+            weights_before[p["ticker"]] = p["weight"]
+
+        # Compute after-weights by applying trade actions
+        weights_after = dict(weights_before)
+        for action in decision.actions:
+            sym = action.symbol
+            direction = getattr(action.direction, 'value', str(action.direction)).lower()
+            pct = (action.size_percent or 5.0) / 100.0  # default 5%
+
+            if direction in ["buy", "long", "add", "increase", "cover"]:
+                weights_after[sym] = weights_after.get(sym, 0) + pct
+            elif direction in ["sell", "short", "reduce", "liquidate"]:
+                weights_after[sym] = max(0, weights_after.get(sym, 0) - pct)
+
+        # Normalize weights
+        total_w_before = sum(weights_before.values()) or 1
+        total_w_after = sum(weights_after.values()) or 1
+        norm_before = {k: v / total_w_before for k, v in weights_before.items()}
+        norm_after = {k: v / total_w_after for k, v in weights_after.items()}
+
+        # Compute portfolio return series (before and after)
+        def portfolio_returns(weight_dict):
+            series = None
+            for ticker, w in weight_dict.items():
+                if ticker in returns_df.columns and w > 0:
+                    contrib = returns_df[ticker] * w
+                    series = contrib if series is None else series.add(contrib, fill_value=0)
+            return series
+
+        port_ret_before = portfolio_returns(norm_before)
+        port_ret_after = portfolio_returns(norm_after)
+
+        if port_ret_before is None or port_ret_after is None:
+            return {"applicable": False, "reason": "Insufficient return data"}
+
+        # Compute correlations to each factor
+        factor_exposures = []
+        has_warning = False
+        for factor_key, factor_ticker in factor_proxies.items():
+            if factor_ticker not in returns_df.columns:
+                continue
+            factor_rets = returns_df[factor_ticker].dropna()
+
+            # Align data
+            common_before = port_ret_before.dropna().index.intersection(factor_rets.index)
+            common_after = port_ret_after.dropna().index.intersection(factor_rets.index)
+
+            if len(common_before) < 30 or len(common_after) < 30:
+                continue
+
+            corr_before = float(port_ret_before.loc[common_before].corr(factor_rets.loc[common_before]))
+            corr_after = float(port_ret_after.loc[common_after].corr(factor_rets.loc[common_after]))
+
+            if np.isnan(corr_before) or np.isnan(corr_after):
+                continue
+
+            delta = round((corr_after - corr_before) * 100, 1)  # As percentage points
+            warning = abs(delta) > 15  # Flag if correlation shifts by >15pp
+            if warning:
+                has_warning = True
+
+            # Use human-readable label for the factor
+            display_label = factor_labels.get(factor_key, factor_key)
+
+            factor_exposures.append({
+                "factor": display_label,
+                "before": round(corr_before * 100, 1),
+                "after": round(corr_after * 100, 1),
+                "delta": delta,
+                "warning": warning,
+            })
+
+        if not factor_exposures:
+            return {"applicable": False, "reason": "Insufficient factor data"}
+
+        # Build risk message
+        warned_factors = [f for f in factor_exposures if f["warning"]]
+        if warned_factors:
+            top = warned_factors[0]
+            risk_message = (
+                f"This trade shifts your portfolio's correlation to {top['factor']} "
+                f"by {top['delta']:+.0f}pp ({top['before']:.0f}% -> {top['after']:.0f}%). "
+                f"You may be more exposed to this factor than standard diversification suggests."
+            )
+        else:
+            risk_message = "No significant hidden factor concentration detected."
+
+        return {
+            "applicable": True,
+            "factor_exposures": factor_exposures,
+            "has_warning": has_warning,
+            "risk_message": risk_message,
+        }
+    except Exception as e:
+        print(f"MOAT CORRELATION WARNING: {e}")
+        return {"applicable": False}
+
+
 @app.post("/api/v1/decision/simulate")
 def decision_simulate(request: Request, body: DecisionSimulationIn):
     """
@@ -820,9 +1188,30 @@ def decision_simulate(request: Request, body: DecisionSimulationIn):
                     if action.symbol in latest_prices:
                         price = float(latest_prices[action.symbol])
                         if action.size_shares is not None:
-                            action.size_usd = action.size_shares * price
+                            # 1. Calculate value in local currency
+                            local_value = action.size_shares * price
+                            # 2. Convert to USD
+                            asset_info = ASSET_RESOLVER.resolve_asset(action.symbol)
+                            rate = 1.0
+                            if asset_info and asset_info.currency != "USD":
+                                rate = FALLBACK_FX_RATES.get(asset_info.currency, 1.0)
+                            
+                            action.size_usd = local_value * rate
+                            print(f"[SHARE CONVERSION] {action.size_shares} shares of {action.symbol} @ {price:.2f} = {local_value:.2f} {asset_info.currency if asset_info else 'USD'} -> {action.size_usd:.2f} USD")
+                            
                             # Clearing size_percent to force recalculation based on USD
-                            action.size_percent = None 
+                            action.size_percent = None
+                            
+                    # SAFETY CAP: If trade value exceeds portfolio value, cap at 100% of portfolio
+                    # This prevents absurd margin leverage scenarios (e.g. buying 800% of portfolio)
+                    total_value = portfolio.get("total_value", 100000)
+                    if action.size_usd is not None and total_value > 0:
+                        max_trade_value = total_value * 1.0  # Cap at 100% of portfolio
+                        if action.size_usd > max_trade_value:
+                            original_usd = action.size_usd
+                            action.size_usd = max_trade_value
+                            action.size_percent = 100.0  # Explicitly set to 100%
+                            print(f"[SIZE CAP] Trade value {original_usd:,.2f} exceeds 100% of portfolio ({total_value:,.2f}). Capped to {(max_trade_value):,.2f} (100%).")
             except Exception as e:
                 print(f"Price fetch warning in pre-process: {e}")
 
@@ -988,6 +1377,18 @@ def decision_simulate(request: Request, body: DecisionSimulationIn):
             # Attach to tax_analysis too
             tax_analysis["exit_assumptions"] = exit_assumptions
 
+        # 8.5. Moat Features (additive — never break existing response)
+        moat_time_travel = compute_time_travel_insight(
+            decision, tax_analysis, body, portfolio
+        )
+        moat_tax_harvest = compute_tax_loss_harvest(
+            decision, portfolio, tax_analysis
+        )
+        moat_correlation = compute_hidden_correlation(
+            decision, portfolio, comparison,
+            jurisdiction=body.tax_jurisdiction or "US"
+        )
+
         # 9. Construct Response (Universal Output Blueprint)
         return {
             "ok": True,
@@ -1011,7 +1412,11 @@ def decision_simulate(request: Request, body: DecisionSimulationIn):
                 "permanent_loss_formula": "CVaR-95 (Expected Shortfall at 95th confidence)",
                 "drawdown_statistic": "median across Monte Carlo paths",
                 "score_normalization": "sigmoid(delta, sensitivity)"
-            }
+            },
+            # ── Competitive Moats (additive keys) ──
+            "moat_time_travel": moat_time_travel,
+            "moat_tax_harvest": moat_tax_harvest,
+            "moat_correlation_risk": moat_correlation,
         }
     except Exception as e:
         print(f"SIMULATION ERROR: {str(e)}")

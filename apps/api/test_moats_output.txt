@@ -1,0 +1,72 @@
+[PASS] moat_time_travel: applicable=True | If you wait 183 days, this becomes Long-Term Capital Gains and you save $0.17.
+[PASS] moat_tax_harvest: applicable=True | This trade generates a $2 capital gain. Selling MSFT (currently at -23.7%) would
+[PASS] moat_correlation_risk: applicable=True | n/a
+
+--- moat_time_travel ---
+{
+  "applicable": true,
+  "current_tax": 0.4,
+  "optimized_tax": 0.23,
+  "savings": 0.17,
+  "wait_days": 183,
+  "current_rate_label": "Short-Term (15%)",
+  "optimized_rate_label": "Long-Term (10%)",
+  "message": "If you wait 183 days, this becomes Long-Term Capital Gains and you save $0.17."
+}
+
+--- moat_tax_harvest ---
+{
+  "applicable": true,
+  "trade_gain": 2.31,
+  "offset_candidates": [
+    {
+      "symbol": "MSFT",
+      "return_pct": -23.69,
+      "estimated_loss": 465.16,
+      "offset_amount": 2.31,
+      "position_weight_pct": 42.6
+    }
+  ],
+  "total_offset": 2.31,
+  "remaining_gain": 0,
+  "net_tax_after_offset": 0.0,
+  "savings": 0.4,
+  "message": "This trade generates a $2 capital gain. Selling MSFT (currently at -23.7%) would offset $2, saving ~$0 in tax."
+}
+
+--- moat_correlation_risk ---
+{
+  "applicable": true,
+  "factor_exposures": [
+    {
+      "factor": "Market (SPY)",
+      "before": 84.8,
+      "after": 84.7,
+      "delta": -0.1,
+      "warning": false
+    },
+    {
+      "factor": "Interest Rates (TLT)",
+      "before": 3.5,
+      "after": 3.7,
+      "delta": 0.2,
+      "warning": false
+    },
+    {
+      "factor": "Inflation (GLD)",
+      "before": -2.5,
+      "after": -2.5,
+      "delta": 0.0,
+      "warning": false
+    },
+    {
+      "factor": "USD Strength (UUP)",
+      "before": 15.6,
+      "after": 15.8,
+      "delta": 0.1,
+      "warning": false
+    }
+  ],
+  "has_warning": false,
+  "risk_message": "No significant hidden factor concentration detected."
+}
