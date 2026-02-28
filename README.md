@@ -1,113 +1,38 @@
-# Advisor Dashboard (Admin-only MVP)
+# Gloqont Protocol & Intelligence Engine
+*(Proprietary & Confidential)*
 
-This is a standalone project (not connected to any other dashboard).
+Gloqont is a next-generation analytical platform designed specifically to provide unassailable competitive moats in the portfolio management space. Built using a React/Next.js and Python/FastAPI architecture.
 
-## Features
-- Admin-only login (single account configured via env vars)
-- Portfolio Optimizer / Constructor
-  - Add tickers + weights
-  - Enforces weights sum to 100%
-  - Risk budget enum: LOW / MEDIUM / HIGH
-  - Backend returns a "risk object" contract for future quant services
+## Core Features
+- **Portfolio Construction & Analysis:** Build portfolios with tickers and weights, and calculate expected returns, volatility, drawdowns, and tail risk.
+- **Scenario Simulation Engine:** Natural language trade parsing (e.g., "Increase tech exposure by 12%") hooked into a quantitative simulation engine.
+- **Monte Carlo Risk Projections:** Realistic path generation using geometric drift models and volatility drag to simulate future best, median, and worst-case scenarios.
+- **Multi-Jurisdiction Tax Engine:** Pre-execution tax analysis covering realizing gains, execution friction, and country-specific regimes (e.g., US Short/Long-Term Capital Gains, NL Box 3 Wealth Tax).
+- **Macro Shock Modeling:** Simulate the impact of specific market shocks on portfolio components.
 
-## Requirements
-- Node.js 18+ (recommended 20+)
-- Python 3.10+ (recommended 3.11)
+## Setup & Execution
 
-## Setup
-
-### 1) Backend (FastAPI)
+### 1) Backend Intelligence Engine (FastAPI)
+The central nervous system computing tax vectors, market shocks, and temporal predictions.
 ```bash
-# edit .env and set ADMIN_PASSWORD + SESSION_SECRET
 cd apps/api
-cp .env.example .env
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv venv_win
+.\venv_win\Scripts\activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python -m uvicorn main:app --reload --port 8002
 ```
-API docs: http://localhost:8000/docs
+*API Endpoint / Docs:* http://localhost:8002/docs
 
-### 2) Frontend (Next.js)
+### 2) Frontend Dashboard (Next.js 14)
+The visualization layer for the intelligence engine.
 ```bash
 cd apps/web
-cp .env.local.example .env.local
 npm install
-npm run dev
+npm run dev -- -p 3002
 ```
-Open: http://localhost:3000
+*Dashboard Access:* http://localhost:3002
 
-## Login
-- Go to http://localhost:3000/login
-- Use ADMIN_USERNAME / ADMIN_PASSWORD from `apps/api/.env`
 
-## Deploy To EC2 (t3.micro)
-
-This repo now includes deployment assets:
-- `scripts/bootstrap_ec2.sh` (first-time server setup)
-- `scripts/deploy_ec2.sh` (pull/build/restart)
-- `deploy/systemd/advisor-api.service`
-- `deploy/systemd/advisor-web.service`
-- `deploy/nginx/advisor-dashboard.conf`
-
-### 1) Push your branch to GitHub
-```bash
-git add .
-git commit -m "prepare ec2 deployment"
-git push origin <branch>
-```
-
-### 2) SSH into EC2 and clone repo
-```bash
-ssh -i <your-key>.pem ubuntu@<ec2-public-ip>
-git clone <your-repo-url> /opt/gloqont
-cd /opt/gloqont
-```
-
-### 3) Bootstrap server (one time)
-```bash
-bash scripts/bootstrap_ec2.sh
-```
-
-### 4) Create production env files
-```bash
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.local.example apps/web/.env.local
-```
-
-Set real values in `apps/api/.env`:
-- `ADMIN_PASSWORD` (strong value)
-- `SESSION_SECRET` (long random value)
-- `CORS_ORIGINS=https://gloqont.com,https://www.gloqont.com`
-- `SESSION_COOKIE_SECURE=true`
-
-### 5) Deploy app
-```bash
-DEPLOY_BRANCH=<branch> APP_DIR=/opt/gloqont bash scripts/deploy_ec2.sh
-```
-
-### 6) Verify services
-```bash
-sudo systemctl status gloqont-api gloqont-web nginx
-curl -I http://127.0.0.1:8000/docs
-curl -I http://127.0.0.1:3000
-```
-
-### 7) Optional: HTTPS
-After DNS points to EC2, install TLS:
-```bash
-sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d gloqont.com -d www.gloqont.com
-```
-
-## t3.micro Notes
-- Keep only one API worker (default in `uvicorn` command).
-- Use `npm ci` and build on-server only when needed.
-- For low-memory instances, add swap if builds fail:
-```bash
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
+## License
+Copyright © 2024-Present Gloqont. All Rights Reserved.
+This software is strictly confidential and proprietary. See `LICENSE` for details.

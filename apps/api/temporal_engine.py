@@ -34,12 +34,13 @@ from asset_resolver import ASSET_RESOLVER
 @dataclass
 class MarketParams:
     """Market parameters for simulation."""
-    risk_free_rate: float = 0.04  # 4% annual
+    risk_free_rate: float = 0.043  # 4.3% annual
     base_volatility: float = 0.20  # 20% annual
     mean_reversion_speed: float = 0.1
-    jump_intensity: float = 0.02  # 2% chance of jump per day
-    jump_magnitude: float = 0.03  # 3% average jump size
+    jump_intensity: float = 0.004  # ~0.4% chance of jump per day (~1/year)
+    jump_magnitude: float = 0.05  # 5% average jump size
     correlation_decay: float = 0.95
+    default_sharpe_ratio: float = 0.3  # Fallback Sharpe
 
 
 class TemporalSimulationEngine:
@@ -56,7 +57,7 @@ class TemporalSimulationEngine:
         Args:
             seed: Random seed for reproducibility
         """
-        self.seed = seed or secrets.randbits(32)
+        self.seed = seed if seed is not None else secrets.randbits(32)
         self.rng = np.random.default_rng(self.seed)
         self.market_params = MarketParams()
         
@@ -73,6 +74,13 @@ class TemporalSimulationEngine:
         
         # Default correlations (simplified)
         self.base_correlation = 0.6  # Average equity correlation
+        
+        # Per-asset Sharpe from long-run empirical approximations
+        self.asset_sharpe_ratios = {
+            "SPY": 0.45, "QQQ": 0.40, "AGG": 0.30, "TLT": 0.20,
+            "AAPL": 0.50, "MSFT": 0.55, "GOOGL": 0.35, "NVDA": 0.40,
+            "TSLA": 0.15, "BTC-USD": 0.35, "GLD": 0.25,
+        }
     
     def _apply_market_shocks(self, initial_prices: Dict[str, float], shocks: List[MarketShock]) -> Dict[str, float]:
         """
@@ -182,7 +190,9 @@ class TemporalSimulationEngine:
         decision: StructuredDecision,
         horizon_days: int = 30,
         n_paths: int = 100,
-        time_steps_per_day: int = 1
+        time_steps_per_day: int = 1,
+        horizon_unit: str = "days",
+        horizon_value: int = 30
     ) -> Tuple[List[SimulationPath], List[SimulationPath]]:
         """
         Run the full simulation comparing baseline vs. scenario.
@@ -217,10 +227,15 @@ class TemporalSimulationEngine:
 
         # 3. Create all tickers set for _generate_price_paths
         all_tickers = list(set(tickers))
-        
-        # Setup simulation parameters
-        dt = 1.0 / 365.25
-        total_steps = horizon_days
+        # Setup simulation parameters (Intraday support)
+        if horizon_unit == "hours":
+            # Scale to actual requested hours, dt becomes a fraction of a 6.5h trading day
+            dt = 1.0 / (252.0 * 6.5)
+            total_steps = horizon_value
+        else:
+            # For days, weeks, months: use standard 1-day increments
+            dt = 1.0 / 252.0
+            total_steps = max(1, horizon_days)
         
         # Ensure all tickers in initial_prices (defaults to 100 if not set)
         for t in all_tickers:
@@ -228,7 +243,14 @@ class TemporalSimulationEngine:
                 initial_prices[t] = 100.0
 
         # Generate price paths for all relevant assets
-        price_paths = self._generate_price_paths(all_tickers, initial_prices, total_steps, dt, n_paths)
+        try:
+            from risk import fetch_prices
+            price_data = fetch_prices(all_tickers, lookback_days=252, cache_ttl_seconds=3600)
+            empirical_corr = price_data.returns.corr().values
+        except Exception:
+            empirical_corr = None
+
+        price_paths = self._generate_price_paths(all_tickers, initial_prices, total_steps, dt, n_paths, empirical_corr)
         
         # Calculate Scenario Initial Impact (if any shocks)
         scenario_impact_ratio = 1.0
@@ -261,7 +283,8 @@ class TemporalSimulationEngine:
         initial_prices: Dict[str, float],
         total_steps: int,
         dt: float,
-        n_paths: int = 1
+        n_paths: int = 1,
+        empirical_corr: Optional[np.ndarray] = None
     ) -> Dict[str, np.ndarray]:
         """
         Generate correlated price paths using geometric Brownian motion with jumps.
@@ -270,7 +293,10 @@ class TemporalSimulationEngine:
         n_assets = len(tickers)
         
         # Build correlation matrix
-        corr_matrix = np.eye(n_assets) * (1 - self.base_correlation) + self.base_correlation
+        if empirical_corr is not None and empirical_corr.shape == (n_assets, n_assets):
+            corr_matrix = empirical_corr
+        else:
+            corr_matrix = np.eye(n_assets) * (1 - self.base_correlation) + self.base_correlation
         
         # Cholesky decomposition for correlated random draws
         try:
@@ -292,9 +318,9 @@ class TemporalSimulationEngine:
             
             # REALISM FIX: Use Real-World Drift instead of Risk-Neutral Drift for Monte Carlo
             # Risk Free Rate + (Sharpe Ratio * Volatility)
-            # Assuming average Sharpe of 0.4 for the broad market assets
-            market_sharpe_ratio = 0.4
-            equity_risk_premium = vol * market_sharpe_ratio
+            # Per-asset Sharpe from long-run empirical approximations
+            asset_sharpe = self.asset_sharpe_ratios.get(ticker, self.market_params.default_sharpe_ratio)
+            equity_risk_premium = vol * asset_sharpe
             
             # Real-world drift = r + ERP
             real_world_drift = self.market_params.risk_free_rate + equity_risk_premium
@@ -312,7 +338,10 @@ class TemporalSimulationEngine:
             # Vectorized Jump Mask
             jump_mask = self.rng.random((n_paths, total_steps)) < jump_prob
             if np.any(jump_mask):
-                jumps[jump_mask] = self.rng.normal(0, self.market_params.jump_magnitude, size=np.sum(jump_mask))
+                # Asymmetric jump: 70% negative (crashes), 30% positive (gap-ups)
+                jump_signs = np.where(self.rng.random(np.sum(jump_mask)) < 0.7, -1.0, 1.0)
+                jump_abs = np.abs(self.rng.standard_t(df=4, size=np.sum(jump_mask))) * self.market_params.jump_magnitude
+                jumps[jump_mask] = jump_signs * jump_abs
             
             # GBM Evolution
             # ret = (drift - 0.5 * vol^2) * dt + vol * dW + jump
@@ -323,7 +352,7 @@ class TemporalSimulationEngine:
             # Let's standardize on Annualized Params:
             # drift (annual) = 0.09
             # vol (annual) = 0.20
-            # dt (annual) = 1/365
+            # dt (annual) = 1/252
             
             dW = correlated_Z[:, :, i] * np.sqrt(dt)
             ret = (drift - 0.5 * vol**2) * dt + vol * dW + jumps
@@ -370,6 +399,15 @@ class TemporalSimulationEngine:
         # Execute decision logic once (deterministically)
         post_weights_dict = self._execute_decision(decision, portfolio_positions.copy(), initial_value)
         
+        # Extract leverage metadata before building weight vector
+        leverage_meta = post_weights_dict.pop("__leverage_meta__", None)
+        margin_cost_daily = 0.0
+        if leverage_meta:
+            margin_cost_daily = leverage_meta["margin_cost_daily"]
+            print(f"LEVERAGE: gross_exposure={leverage_meta['gross_exposure']:.4f}, "
+                  f"borrowed={leverage_meta['leverage_amount']:.4f}, "
+                  f"margin_cost_daily={margin_cost_daily:.8f}")
+        
         post_weights = np.zeros(len(sorted_tickers))
         for i, t in enumerate(sorted_tickers):
             post_weights[i] = post_weights_dict.get(t, 0.0)
@@ -393,9 +431,15 @@ class TemporalSimulationEngine:
         if exec_step > 0:
             returns_pre = asset_returns[:, :exec_step, :] @ current_weights
             returns_post = asset_returns[:, exec_step:, :] @ post_weights
+            # LEVERAGE: Subtract daily margin cost from leveraged period returns
+            if margin_cost_daily > 0:
+                returns_post = returns_post - margin_cost_daily
             returns_scen_all = np.hstack([returns_pre, returns_post]) if exec_step < total_steps else returns_pre
         else:
             returns_scen_all = asset_returns @ post_weights
+            # LEVERAGE: Subtract daily margin cost from all scenario returns
+            if margin_cost_daily > 0:
+                returns_scen_all = returns_scen_all - margin_cost_daily
 
         # 5. Helper to create paths from returns
         def create_paths_from_returns(r_matrix, prefix, impact_ratio=1.0):
@@ -488,6 +532,7 @@ class TemporalSimulationEngine:
                 current_weights = self._execute_decision(
                     decision, current_weights, current_value
                 )
+                current_weights.pop("__leverage_meta__", None)
                 decision_executed = True
             
             # Calculate metrics for this state
@@ -532,7 +577,13 @@ class TemporalSimulationEngine:
         new_weights = current_weights.copy()
         
         for action in decision.actions:
-            symbol = action.symbol
+            symbol = action.symbol.upper()
+            asset_info = ASSET_RESOLVER.resolve_asset(symbol)
+            if asset_info and asset_info.is_valid:
+                symbol = asset_info.symbol
+                # Canonicalize Indian stocks: TCS → TCS.NS
+                if asset_info.country == "India" and not symbol.endswith((".NS", ".BO")):
+                    symbol = symbol + ".NS"
             
             # Lookup current price if calculating based on shares
             current_price = None
@@ -561,6 +612,13 @@ class TemporalSimulationEngine:
             
             size = action.get_effective_size_percent(current_value, current_price=price_to_use)
             
+            # SAFETY CAP: Prevent any single trade from exceeding 100% of portfolio
+            # This catches cases where "Buy 100 shares" is misinterpreted as 1000% allocation
+            MAX_SINGLE_TRADE_PCT = 100.0
+            if abs(size) > MAX_SINGLE_TRADE_PCT:
+                print(f"[SIZE CAP] Capping trade size from {size:.1f}% to {MAX_SINGLE_TRADE_PCT}% for {symbol}")
+                size = MAX_SINGLE_TRADE_PCT if size > 0 else -MAX_SINGLE_TRADE_PCT
+            
             # Convert size to decimal weight
             size_weight = size / 100.0
             
@@ -581,6 +639,25 @@ class TemporalSimulationEngine:
             if total_weight > 0:
                 for symbol in new_weights:
                     new_weights[symbol] = new_weights[symbol] / total_weight
+        
+        # LEVERAGE CORRECTION: If TRADE causes weights > 1.0, model explicit margin cost
+        total_long = sum(w for w in new_weights.values() if w > 0)
+        total_short = sum(abs(w) for w in new_weights.values() if w < 0)
+        gross_exposure = total_long + total_short
+        
+        leverage_amount = max(0.0, gross_exposure - 1.0)
+        
+        # Store leverage metadata (consumed by _simulate_vectorized)
+        # margin_rate = risk_free_rate + 150bps spread
+        margin_rate_annual = self.market_params.risk_free_rate + 0.015
+        margin_cost_daily = leverage_amount * margin_rate_annual / 252.0
+        
+        new_weights["__leverage_meta__"] = {
+            "leverage_amount": leverage_amount,
+            "margin_rate_annual": margin_rate_annual,
+            "margin_cost_daily": margin_cost_daily,
+            "gross_exposure": gross_exposure,
+        }
         
         return new_weights
     
@@ -636,20 +713,21 @@ class TemporalSimulationEngine:
         scenario_vols = [p.terminal_volatility_pct for p in scenario_paths]
         scenario_drawdowns = [p.max_drawdown_pct for p in scenario_paths]
         
-        # Calculate statistics
         comparison = DecisionComparison(
             decision_id=decision.decision_id,
             
             baseline_expected_return=float(np.mean(baseline_returns)),
             baseline_volatility=float(np.mean(baseline_vols)),
             baseline_var_95=float(np.percentile(baseline_returns, 5)),
-            baseline_max_drawdown=float(np.mean(baseline_drawdowns)),
+            baseline_max_drawdown=float(np.median(baseline_drawdowns)),
+            baseline_max_drawdown_p5=float(np.percentile(baseline_drawdowns, 5)),
             baseline_tail_loss=float(np.percentile(baseline_returns, 1)),
             
             scenario_expected_return=float(np.mean(scenario_returns)),
             scenario_volatility=float(np.mean(scenario_vols)),
             scenario_var_95=float(np.percentile(scenario_returns, 5)),
-            scenario_max_drawdown=float(np.mean(scenario_drawdowns)),
+            scenario_max_drawdown=float(np.median(scenario_drawdowns)),
+            scenario_max_drawdown_p5=float(np.percentile(scenario_drawdowns, 5)),
             scenario_tail_loss=float(np.percentile(scenario_returns, 1)),
         )
         
@@ -667,10 +745,19 @@ class TemporalSimulationEngine:
         
         # Information ratio
         tracking_error = float(np.std([s - b for s, b in zip(scenario_returns, baseline_returns)]))
-        comparison.information_ratio = comparison.delta_return / max(tracking_error, 0.01)
+        raw_ir = comparison.delta_return / max(tracking_error, 0.01)
+        comparison.information_ratio = max(-5.0, min(5.0, raw_ir))  # Capped at ±5
         
         return comparison
     
+    def _sigmoid_score(self, delta: float, sensitivity: float = 10.0) -> float:
+        """Map a delta to [0, 100] using sigmoid. 50 = neutral."""
+        # delta > 0 is good, delta < 0 is bad
+        # Clamp exponent to prevent math.exp overflow on extreme deltas
+        exponent = max(-500, min(500, -delta * sensitivity))
+        raw = 1.0 / (1.0 + math.exp(exponent))
+        return raw * 100.0
+
     def score(
         self,
         comparison: DecisionComparison,
@@ -680,20 +767,13 @@ class TemporalSimulationEngine:
         Calculate the final decision dominance score.
         """
         # Calculate component scores (0-100 scale, 50 = neutral)
-        return_score = 50 + comparison.delta_return * 10  # Each 1% adds 10 points
-        risk_score = 50 - comparison.delta_volatility * 5  # Lower vol is better
-        tail_score = 50 + comparison.delta_tail_loss * 5  # Less tail loss is better
-        drawdown_score = 50 - comparison.delta_drawdown * 5  # Less drawdown is better
-        
-        # Clamp scores
-        return_score = max(0, min(100, return_score))
-        risk_score = max(0, min(100, risk_score))
-        tail_score = max(0, min(100, tail_score))
-        drawdown_score = max(0, min(100, drawdown_score))
+        return_score = self._sigmoid_score(comparison.delta_return, sensitivity=5.0)
+        risk_score = self._sigmoid_score(-comparison.delta_volatility, sensitivity=3.0)  # Lower vol is better
+        tail_score = self._sigmoid_score(comparison.delta_tail_loss, sensitivity=5.0)  # More positive tail return is better
+        drawdown_score = self._sigmoid_score(-comparison.delta_drawdown, sensitivity=3.0)  # Lower drawdown percentage (closer to 0) is better
         
         # Information ratio score
-        efficiency_score = 50 + comparison.information_ratio * 20
-        efficiency_score = max(0, min(100, efficiency_score))
+        efficiency_score = self._sigmoid_score(comparison.information_ratio, sensitivity=1.0)
         
         # Stability score (lower tracking error is more stable)
         stability_score = 70  # Default stable
@@ -784,7 +864,9 @@ def run_decision_intelligence(
     decision: StructuredDecision,
     horizon_days: int = 30,
     n_paths: int = 100,
-    return_paths: bool = False
+    return_paths: bool = False,
+    horizon_unit: str = "days",
+    horizon_value: int = 30
 ) -> Tuple[DecisionComparison, DecisionScore, Optional[List[SimulationPath]], Optional[List[SimulationPath]]]:
     """
     Run the full decision intelligence pipeline.
@@ -804,7 +886,7 @@ def run_decision_intelligence(
     
     # Run simulation
     baseline_paths, scenario_paths = engine.simulate(
-        portfolio, decision, horizon_days, n_paths
+        portfolio, decision, horizon_days, n_paths, 1, horizon_unit, horizon_value
     )
     
     # Compare
@@ -821,7 +903,9 @@ def run_decision_intelligence(
 def run_decision_intelligence_fast(
     portfolio: Dict[str, Any],
     decision: StructuredDecision,
-    horizon_days: int = 30
+    horizon_days: int = 30,
+    horizon_unit: str = "days",
+    horizon_value: int = 30
 ) -> Tuple[DecisionComparison, DecisionScore]:
     """
     TIER 1: Fast approximation without Monte Carlo (~50ms).
@@ -839,17 +923,26 @@ def run_decision_intelligence_fast(
     """
     engine = TemporalSimulationEngine()
     
+    # Helper: Normalize ticker to canonical form (India: TCS → TCS.NS)
+    def _canon(t):
+        t = t.strip().upper() if t else ""
+        info = ASSET_RESOLVER.resolve_asset(t)
+        if info and info.is_valid and info.country == "India" and not t.endswith((".NS", ".BO")):
+            return t + ".NS"
+        return t
+    
     # Extract portfolio info
     positions = portfolio.get("positions", [])
     total_value = portfolio.get("total_value", 100000.0)
-    tickers = [p.get("ticker") for p in positions]
-    weights = {p.get("ticker"): p.get("weight", 0) for p in positions}
+    tickers = [_canon(p.get("ticker")) for p in positions]
+    weights = {_canon(p.get("ticker")): p.get("weight", 0) for p in positions}
     
     # Add decision assets
     for action in decision.actions:
-        if action.symbol not in weights:
-            tickers.append(action.symbol)
-            weights[action.symbol] = 0.0
+        sym = _canon(action.symbol)
+        if sym not in weights:
+            tickers.append(sym)
+            weights[sym] = 0.0
     
     # Calculate baseline metrics (current portfolio)
     baseline_vol = engine._calculate_portfolio_volatility(weights, tickers)
@@ -857,23 +950,32 @@ def run_decision_intelligence_fast(
     
     # Execute decision (deterministically)
     scenario_weights = engine._execute_decision(decision, weights.copy(), total_value)
+    scenario_weights.pop("__leverage_meta__", None)
     
     # Calculate scenario metrics
     scenario_vol = engine._calculate_portfolio_volatility(scenario_weights, tickers)
     scenario_ret = engine._calculate_expected_return(scenario_weights, tickers)
     
+    # Determine equivalent trading days for scaling (6.5 hours = 1 day)
+    if horizon_unit == "hours":
+        equiv_days = horizon_value / 6.5
+    else:
+        equiv_days = max(1, horizon_days)
+        
+    time_scalar = (equiv_days / 252.0) ** 0.5
+    
     # Estimate drawdown using volatility (rough approximation)
     # Max drawdown ~ 2.5 * volatility for normal markets
-    baseline_drawdown = baseline_vol * 2.5 * (horizon_days / 365) ** 0.5
-    scenario_drawdown = scenario_vol * 2.5 * (horizon_days / 365) ** 0.5
+    baseline_drawdown = baseline_vol * 2.5 * time_scalar
+    scenario_drawdown = scenario_vol * 2.5 * time_scalar
     
     # VaR approximation
-    baseline_var = baseline_ret - 1.65 * baseline_vol * (horizon_days / 365) ** 0.5
-    scenario_var = scenario_ret - 1.65 * scenario_vol * (horizon_days / 365) ** 0.5
+    baseline_var = baseline_ret - 1.65 * baseline_vol * time_scalar
+    scenario_var = scenario_ret - 1.65 * scenario_vol * time_scalar
     
     # Tail loss approximation (5th percentile)
-    baseline_tail = baseline_ret - 2.33 * baseline_vol * (horizon_days / 365) ** 0.5
-    scenario_tail = scenario_ret - 2.33 * scenario_vol * (horizon_days / 365) ** 0.5
+    baseline_tail = baseline_ret - 2.33 * baseline_vol * time_scalar
+    scenario_tail = scenario_ret - 2.33 * scenario_vol * time_scalar
     
     # Build comparison
     comparison = DecisionComparison(
@@ -902,7 +1004,8 @@ def run_decision_intelligence_fast(
     rf = engine.market_params.risk_free_rate * 100
     comparison.sharpe_ratio_baseline = (baseline_ret - rf) / max(baseline_vol, 0.01)
     comparison.sharpe_ratio_scenario = (scenario_ret - rf) / max(scenario_vol, 0.01)
-    comparison.information_ratio = comparison.delta_return / max(abs(comparison.delta_volatility), 0.01)
+    raw_ir = comparison.delta_return / max(abs(comparison.delta_volatility), 0.01)
+    comparison.information_ratio = max(-5.0, min(5.0, raw_ir))
     
     # Score the decision
     score = engine.score(comparison, decision)
@@ -935,14 +1038,34 @@ def calculate_execution_context(
     
     # After: Apply decision to calculate new exposures
     engine = TemporalSimulationEngine()
-    weights = {p.get("ticker"): p.get("weight", 0) for p in positions}
+    
+    # Helper: Normalize ticker to canonical form
+    # e.g., "TCS" and "TCS.NS" should be treated as the same asset
+    def _canonical_ticker(raw_ticker: str) -> str:
+        t = raw_ticker.strip().upper()
+        asset_info = ASSET_RESOLVER.resolve_asset(t)
+        if asset_info and asset_info.is_valid:
+            resolved = asset_info.symbol
+            # If portfolio stored "TCS" but it's an Indian stock, canonicalize to "TCS.NS"
+            if asset_info.country == "India" and not resolved.endswith((".NS", ".BO")):
+                resolved = resolved + ".NS"
+            return resolved
+        return t
+    
+    weights = {}
+    for p in positions:
+        ticker = _canonical_ticker(str(p.get("ticker", "")))
+        if not ticker: continue
+        weights[ticker] = weights.get(ticker, 0.0) + p.get("weight", 0.0)
     
     # Add decision assets
     for action in decision.actions:
-        if action.symbol not in weights:
-            weights[action.symbol] = 0.0
+        symbol = _canonical_ticker(action.symbol)
+        if symbol not in weights:
+            weights[symbol] = 0.0
     
     new_weights = engine._execute_decision(decision, weights.copy(), total_value)
+    new_weights.pop("__leverage_meta__", None)
     
     long_after = sum(w for w in new_weights.values() if w > 0)
     short_after = sum(abs(w) for w in new_weights.values() if w < 0)
@@ -1072,9 +1195,19 @@ def calculate_risk_analysis(
         time_to_risk_interp = "Risk realization would be gradual, allowing time for adjustment."
     
     # Section 8: Irreversibility Analysis
-    # Worst-case tail loss as permanent damage
-    tail_loss_pct = abs(comparison.scenario_tail_loss) if comparison.scenario_tail_loss < 0 else comparison.scenario_volatility * 2.5
-    worst_case_pct = min(tail_loss_pct * 1.5, 50)  # Cap at 50%
+    # Permanent Loss Risk = CVaR-95 (Expected Shortfall) of scenario paths
+    if scenario_paths and len(scenario_paths) > 0:
+        terminal_returns = [p.terminal_return_pct / 100.0 for p in scenario_paths]
+        var_95 = np.percentile(terminal_returns, 5)  # 5th percentile = VaR at 95% confidence
+        # Expected Shortfall: mean of returns worse than or equal to VaR-95
+        tail_returns = [r for r in terminal_returns if r <= var_95]
+        cvar_95 = np.mean(tail_returns) if tail_returns else var_95
+        worst_case_pct = min(abs(cvar_95) * 100, 100) # Cap at 100% loss
+    else:
+        # Fallback if no paths (e.g. fast approximation)
+        tail_loss_pct = abs(comparison.scenario_tail_loss) if comparison.scenario_tail_loss < 0 else comparison.scenario_volatility * 2.5
+        worst_case_pct = min(tail_loss_pct * 1.5, 100)  # Cap at 100%
+        
     worst_case_usd = total_value * (worst_case_pct / 100)
     
     # Recovery time: Assuming 8% annual return to recover

@@ -3,9 +3,9 @@ import { EnhancedDecisionVisualizations } from './EnhancedDecisionVisualizations
 
 // Types for visualization data
 type DecisionDeltaData = {
-  before_composition: Array<{symbol: string, weight: number}>;
-  after_composition: Array<{symbol: string, weight: number}>;
-  delta_bar: {symbol: string, change: number};
+  before_composition: Array<{ symbol: string, weight: number }>;
+  after_composition: Array<{ symbol: string, weight: number }>;
+  delta_bar: { symbol: string, change: number };
 };
 
 type RiskFanChartData = {
@@ -16,14 +16,14 @@ type RiskFanChartData = {
 };
 
 type ConcentrationShiftData = {
-  before: Array<{ticker: string, weight: number}>;
-  after: Array<{ticker: string, weight: number}>;
+  before: Array<{ ticker: string, weight: number }>;
+  after: Array<{ ticker: string, weight: number }>;
 };
 
 type RegimeSensitivityData = {
   regime_axes: string[];
-  sensitivity_scores_before: {[key: string]: number};
-  sensitivity_scores_after: {[key: string]: number};
+  sensitivity_scores_before: { [key: string]: number };
+  sensitivity_scores_after: { [key: string]: number };
 };
 
 type IrreversibilityHorizonData = {
@@ -43,9 +43,9 @@ type TimeToDamageGaugeData = {
 };
 
 type RiskReturnPlaneData = {
-  before_point: {risk: number; return: number; label: string};
-  after_point: {risk: number; return: number; label: string};
-  plane_limits: {min_risk: number; max_risk: number; min_return: number; max_return: number};
+  before_point: { risk: number; return: number; label: string };
+  after_point: { risk: number; return: number; label: string };
+  plane_limits: { min_risk: number; max_risk: number; min_return: number; max_return: number };
 };
 
 type ExposureHeatmapData = {
@@ -56,8 +56,8 @@ type ExposureHeatmapData = {
 
 type RecoveryPathData = {
   time_points: number[];
-  historical_recovery_paths: Array<{days: number; recovery_pct: number}>;
-  current_portfolio_recovery: Array<{days: number; recovery_pct: number}>;
+  historical_recovery_paths: Array<{ days: number; recovery_pct: number }>;
+  current_portfolio_recovery: Array<{ days: number; recovery_pct: number }>;
 };
 
 // Helper function to format percentages
@@ -118,7 +118,7 @@ const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data })
           </div>
 
           {/* After composition bar */}
-          <div className='flex-1 h-8 bg-gradient-to-r from-purple-500/30 to-purple-700/30 rounded flex items-center justify-center text-xs'>
+          <div className='flex-1 h-8 bg-gradient-to-r from-cyan-500/30 to-cyan-700/30 rounded flex items-center justify-center text-xs'>
             {afterWeights.map((pos, idx) => (
               <div
                 key={idx}
@@ -190,11 +190,11 @@ const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) =>
               const y = ((data.severe_stress_case[idx] - minValue) / range) * 100;
               return `${x}%,${(100 - y)}%`;
             }).join(' ') + ' ' +
-            data.time_horizons.slice().reverse().map((_, idx) => {
-              const x = ((data.time_horizons.length - 1 - idx) / (data.time_horizons.length - 1)) * 100;
-              const y = ((data.base_case[data.time_horizons.length - 1 - idx] - minValue) / range) * 100;
-              return `${x}%,${(100 - y)}%`;
-            }).join(' ')}
+              data.time_horizons.slice().reverse().map((_, idx) => {
+                const x = ((data.time_horizons.length - 1 - idx) / (data.time_horizons.length - 1)) * 100;
+                const y = ((data.base_case[data.time_horizons.length - 1 - idx] - minValue) / range) * 100;
+                return `${x}%,${(100 - y)}%`;
+              }).join(' ')}
           />
         </svg>
 
@@ -208,11 +208,11 @@ const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) =>
               const y = ((data.stress_case[idx] - minValue) / range) * 100;
               return `${x}%,${(100 - y)}%`;
             }).join(' ') + ' ' +
-            data.time_horizons.slice().reverse().map((_, idx) => {
-              const x = ((data.time_horizons.length - 1 - idx) / (data.time_horizons.length - 1)) * 100;
-              const y = ((data.base_case[data.time_horizons.length - 1 - idx] - minValue) / range) * 100;
-              return `${x}%,${(100 - y)}%`;
-            }).join(' ')}
+              data.time_horizons.slice().reverse().map((_, idx) => {
+                const x = ((data.time_horizons.length - 1 - idx) / (data.time_horizons.length - 1)) * 100;
+                const y = ((data.base_case[data.time_horizons.length - 1 - idx] - minValue) / range) * 100;
+                return `${x}%,${(100 - y)}%`;
+              }).join(' ')}
           />
         </svg>
 
@@ -297,10 +297,10 @@ const ConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }> = ({ d
                 <div className='w-20 text-xs truncate'>{pos.ticker}</div>
                 <div className='flex-1 ml-2'>
                   <div
-                    className='h-4 bg-purple-500/30 rounded-full overflow-hidden'
+                    className='h-4 bg-cyan-500/30 rounded-full overflow-hidden'
                     style={{ width: `${Math.abs(pos.weight)}%` }}
                   >
-                    <div className='h-full bg-purple-500 flex items-center justify-end pr-1 text-xs text-white'>
+                    <div className='h-full bg-cyan-500 flex items-center justify-end pr-1 text-xs text-white'>
                       {fmtPct(pos.weight)}
                     </div>
                   </div>

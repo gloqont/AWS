@@ -14,6 +14,7 @@ from tax_engine.core import AbstractTaxStrategy
 from tax_engine.models import (
     TaxProfile, PortfolioTaxContext, TransactionDetail,
     TaxLayer, HoldingPeriod, AssetClass, AccountType, IncomeTier,
+    RiskSignal, RiskSignalSeverity, TaxImpact
 )
 
 
@@ -138,6 +139,36 @@ class FranceTaxStrategy(AbstractTaxStrategy):
         return layers
 
 
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        if tax_impact.total_tax_liability <= 0:
+            return signals
+
+        # 1. Linear Tax Compression
+        signals.append(RiskSignal(
+            title="Linear Tax Compression",
+            severity=RiskSignalSeverity.MEDIUM,
+            expected_return_drag_pct=-round(FRANCE_FLAT_TAX * 100, 2),
+            tail_loss_delta_pct=round(FRANCE_FLAT_TAX * 100 * 0.1, 2),
+            mechanism="Flat tax (PFU 30%) makes after-tax distribution a linear shift"
+        ))
+
+        # 2. High Social Charge Drag
+        signals.append(RiskSignal(
+            title="High Social Charge Drag",
+            severity=RiskSignalSeverity.MEDIUM,
+            expected_return_drag_pct=-round(FRANCE_SOCIAL_CHARGES_RATE * 100, 2),
+            mechanism="17.2% Social Charges magnification on tail risk"
+        ))
+
+        return signals
+
 # ═══════════════════════════════════════════════
 # 🇬🇧 UNITED KINGDOM
 # ═══════════════════════════════════════════════
@@ -215,6 +246,51 @@ class UKTaxStrategy(AbstractTaxStrategy):
 
         return layers
 
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        
+        # 1. Allowance Utilization
+        gain = tax_impact.estimated_gain_usd
+        if gain > 0:
+            if gain < UK_CGT_ALLOWANCE:
+                buffer_left = UK_CGT_ALLOWANCE - gain
+                signals.append(RiskSignal(
+                    title="Allowance Utilization",
+                    severity=RiskSignalSeverity.LOW,
+                    available_offset_usd=round(buffer_left, 2),
+                    risk_dampening_potential_pct=100.0,
+                    mechanism="Zero-tax buffer available (£3,000) reduces realization risk"
+                ))
+
+            # 2. Income Band Sensitivity
+            cg_rate = UK_CGT_RATES.get(profile.income_tier, 0.20)
+            if cg_rate > 0.10:
+                signals.append(RiskSignal(
+                    title="Income Band Sensitivity",
+                    severity=RiskSignalSeverity.MEDIUM,
+                    expected_return_drag_pct=-round(cg_rate * 100, 2),
+                    mechanism="Higher income band increases CGT rate to 20%"
+                ))
+
+        # 3. Stamp Duty Friction
+        sdrt_layers = [l for l in tax_impact.layers if l.name == "SDRT"]
+        if sdrt_layers:
+            signals.append(RiskSignal(
+                title="Stamp Duty Friction",
+                severity=RiskSignalSeverity.LOW,
+                expected_return_drag_pct=-round(UK_SDRT_RATE * 100, 2),
+                volatility_impact_pct=0.1,
+                mechanism="Execution drag on equities (0.5% SDRT)"
+            ))
+
+        return signals
 
 # ═══════════════════════════════════════════════
 # 🇳🇱 NETHERLANDS
@@ -306,3 +382,34 @@ class NetherlandsTaxStrategy(AbstractTaxStrategy):
         ))
         
         return layers
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        if tax_impact.total_tax_liability <= 0:
+            return signals
+
+        eff_rate = NL_DEEMED_RETURN_INVESTMENT * NL_BOX3_TAX_RATE
+        
+        # 1. Wealth Floor Risk
+        signals.append(RiskSignal(
+            title="Wealth Floor Risk",
+            severity=RiskSignalSeverity.HIGH,
+            tail_loss_delta_pct=round(eff_rate * 100, 2), # increases baseline drawdown
+            mechanism="Annual tax regardless of realization increases baseline drawdown floor"
+        ))
+
+        # 2. Capital Efficiency Drag
+        signals.append(RiskSignal(
+            title="Capital Efficiency Drag",
+            severity=RiskSignalSeverity.MEDIUM,
+            expected_return_drag_pct=-round(eff_rate * 100, 2),
+            mechanism="High asset value implies higher annual tax load (Box 3)"
+        ))
+
+        return signals

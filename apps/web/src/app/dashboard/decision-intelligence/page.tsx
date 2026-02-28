@@ -205,7 +205,7 @@ function ParsedActions({ actions, currency = "USD" }: { actions: DecisionAction[
         <div key={i} className="flex items-center gap-2 text-sm">
           <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${action.direction === "buy" ? "bg-green-500/20 text-green-400" :
             action.direction === "sell" ? "bg-red-500/20 text-red-400" :
-              action.direction === "short" ? "bg-purple-500/20 text-purple-400" :
+              action.direction === "short" ? "bg-cyan-500/20 text-cyan-400" :
                 "bg-blue-500/20 text-blue-400"
             }`}>
             {action.direction}
@@ -384,9 +384,10 @@ export default function DecisionIntelligencePage() {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
-            <div className="text-sm text-white/60">Simulation Horizon</div>
+            <label htmlFor="horizonDays" className="text-sm text-white/60 block">Simulation Horizon</label>
             <div className="mt-2 flex items-center gap-2">
               <input
+                id="horizonDays"
                 type="range"
                 min="7"
                 max="90"

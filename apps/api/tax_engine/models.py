@@ -262,3 +262,28 @@ class TaxImpact(BaseModel):
     # Human summary
     summary: str = Field(default="")
     warnings: List[str] = Field(default_factory=list)
+
+
+class RiskSignalSeverity(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+class RiskSignal(BaseModel):
+    """
+    Quantified risk signals representing how tax transforms portfolio distributions.
+    Replaces qualitative advice.
+    """
+    title: str = Field(..., description="E.g. 'Realization Sensitivity' or 'Execution Friction Density'")
+    severity: RiskSignalSeverity = Field(default=RiskSignalSeverity.LOW)
+    
+    # Specific quantitative deltas 
+    tail_loss_delta_pct: Optional[float] = Field(default=None, description="E.g. 0.18 for +0.18%")
+    expected_return_drag_pct: Optional[float] = Field(default=None, description="E.g. -0.25 for -0.25%")
+    volatility_impact_pct: Optional[float] = Field(default=None, description="E.g. 0.05 for +0.05%")
+    
+    mechanism: str = Field(..., description="E.g. 'Short-Term Federal + State Layer'")
+    
+    # For cushion buffers (e.g. UK allowances, NL wealth tax floors, Canadian TFSA buffers)
+    available_offset_usd: Optional[float] = Field(default=None)
+    risk_dampening_potential_pct: Optional[float] = Field(default=None)

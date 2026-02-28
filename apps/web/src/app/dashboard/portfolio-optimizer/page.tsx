@@ -25,18 +25,23 @@ export default function PortfolioOptimizerPage() {
   const [riskBudget, setRiskBudget] = useState<RiskBudget>("MEDIUM");
   const [rows, setRows] = useState<Row[]>([]);
 
-  // Load state from localStorage on mount
+  // Hydrate state from localStorage AFTER mount to prevent SSR mismatch
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    setMounted(true);
+    const savedName = localStorage.getItem("portfolio_name");
+    if (savedName) setName(savedName);
+
+    const savedRisk = localStorage.getItem("portfolio_risk") as RiskBudget;
+    if (savedRisk) setRiskBudget(savedRisk);
+
     try {
       const savedRows = localStorage.getItem("portfolio_rows");
-      const savedName = localStorage.getItem("portfolio_name");
-      const savedRisk = localStorage.getItem("portfolio_risk");
       const savedProfileStr = localStorage.getItem("gloqont_user_profile");
 
-      if (savedRows) {
+      if (savedRows && savedRows !== "[]") {
         setRows(JSON.parse(savedRows));
       } else if (savedProfileStr) {
-        // If no saved portfolio, check profile for defaults
         const profile = JSON.parse(savedProfileStr);
         if (profile.country === "IN") {
           setRows([
@@ -45,29 +50,32 @@ export default function PortfolioOptimizerPage() {
             { ticker: "HDFCBANK.NS", quantity: "20" },
           ]);
         } else {
-          // Default US
           setRows([
             { ticker: "AAPL", quantity: "10" },
             { ticker: "MSFT", quantity: "5" },
           ]);
         }
-      }
-
-      if (savedName) {
-        setName(savedName);
-      }
-      if (savedRisk) {
-        setRiskBudget(savedRisk as RiskBudget);
+      } else {
+        setRows([
+          { ticker: "AAPL", quantity: "10" },
+          { ticker: "MSFT", quantity: "5" },
+        ]);
       }
     } catch (e) {
       console.error("Failed to load portfolio from localStorage", e);
+      setRows([
+        { ticker: "AAPL", quantity: "10" },
+        { ticker: "MSFT", quantity: "5" },
+      ]);
     }
   }, []);
 
-  // Save state to localStorage whenever it changes
+  // Save state to localStorage whenever it changes, but ONLY AFTER mounted
   useEffect(() => {
-    localStorage.setItem("portfolio_rows", JSON.stringify(rows));
-  }, [rows]);
+    if (mounted && rows.length > 0) {
+      localStorage.setItem("portfolio_rows", JSON.stringify(rows));
+    }
+  }, [rows, mounted]);
 
   useEffect(() => {
     localStorage.setItem("portfolio_name", name);
@@ -124,17 +132,7 @@ export default function PortfolioOptimizerPage() {
   const totalValue = useMemo(() => {
     return rows.reduce((acc, r) => {
       const q = toNumber(r.quantity);
-      const p = (() => {
-        const t = (r.ticker || "").trim().toUpperCase();
-        const direct = marketPrices[t];
-        if (Number.isFinite(direct)) return Number(direct);
-        if (t.endsWith(".NS") || t.endsWith(".BO") || t.endsWith(".L") || t.endsWith(".TO") || t.endsWith(".HK")) {
-          const base = t.split(".")[0];
-          const baseVal = marketPrices[base];
-          if (Number.isFinite(baseVal)) return Number(baseVal);
-        }
-        return 0;
-      })();
+      const p = marketPrices[r.ticker?.toUpperCase()] || 0;
       const currency = r.currency || "USD";
       const rate = EXCHANGE_RATES[currency] || 1.0;
       return acc + (q * p * rate);
@@ -148,7 +146,6 @@ export default function PortfolioOptimizerPage() {
   const [loading, setLoading] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const suggestionTimersRef = useRef<Record<number, ReturnType<typeof setTimeout> | null>>({});
 
   // Monte Carlo Paths State for Future Risk Visualization
   const [mcPaths, setMcPaths] = useState<any | null>(null);
@@ -171,19 +168,6 @@ export default function PortfolioOptimizerPage() {
   const totalValueOk = totalValue > 0;
   const canRun = sumOk && totalValueOk && !loading;
 
-  function getLivePrice(ticker: string): number | null {
-    const t = (ticker || "").trim().toUpperCase();
-    if (!t) return null;
-    const direct = marketPrices[t];
-    if (Number.isFinite(direct)) return Number(direct);
-    if (t.endsWith(".NS") || t.endsWith(".BO") || t.endsWith(".L") || t.endsWith(".TO") || t.endsWith(".HK")) {
-      const base = t.split(".")[0];
-      const baseVal = marketPrices[base];
-      if (Number.isFinite(baseVal)) return Number(baseVal);
-    }
-    return null;
-  }
-
   function updateRow(i: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
@@ -193,24 +177,14 @@ export default function PortfolioOptimizerPage() {
   }
 
   async function fetchSuggestion(i: number, q: string) {
-    const query = (q || "").trim();
-    const existing = suggestionTimersRef.current[i];
-    if (existing) clearTimeout(existing);
-
-    if (query.length < 3) {
+    if (!q || q.trim().length < 2) return; // Reduce minimum length to 2 for international tickers
+    try {
+      const country = userProfile?.country || "US";
+      const res = await apiFetch(`/api/v1/market/search?q=${encodeURIComponent(q)}&country=${country}`);
+      setSuggestions((s) => ({ ...s, [i]: res }));
+    } catch (e) {
       setSuggestions((s) => ({ ...s, [i]: null }));
-      return;
     }
-
-    suggestionTimersRef.current[i] = setTimeout(async () => {
-      try {
-        const country = userProfile?.country || "US";
-        const res = await apiFetch(`/api/v1/market/search?q=${encodeURIComponent(query)}&country=${country}`);
-        setSuggestions((s) => ({ ...s, [i]: res }));
-      } catch (e) {
-        setSuggestions((s) => ({ ...s, [i]: null }));
-      }
-    }, 450);
   }
 
   function addRow() {
@@ -226,8 +200,16 @@ export default function PortfolioOptimizerPage() {
       .filter((r) => r.ticker.trim())
       .map((r) => ({ ticker: r.ticker.trim().toUpperCase(), quantity: toNumber(r.quantity) }));
 
-    // compute weights from quantities and marketPrices
-      const vals = positions.map((p) => ({ ticker: p.ticker, val: p.quantity * (getLivePrice(p.ticker) || 0) }));
+    // compute weights from quantities and marketPrices, converting to USD
+    const vals = positions.map((p) => {
+      const row = rows.find((r) => r.ticker.trim().toUpperCase() === p.ticker);
+      const currency = row?.currency || "USD";
+      const rate = EXCHANGE_RATES[currency] || 1.0;
+      return {
+        ticker: p.ticker,
+        val: p.quantity * (marketPrices[p.ticker] || 0) * rate
+      };
+    });
     const total = vals.reduce((a, b) => a + b.val, 0) || 1;
 
     return {
@@ -305,7 +287,7 @@ export default function PortfolioOptimizerPage() {
   async function fetchMarketPrices() {
     const tickers = rows
       .map((r) => (r.ticker || "").trim().toUpperCase())
-      .filter((t) => t && t.length >= 3 && /^[A-Z0-9][A-Z0-9._-]*$/.test(t));
+      .filter((t) => t && /^[A-Z0-9][A-Z0-9._-]*$/.test(t));
     const uniqueTickers = Array.from(new Set(tickers));
     if (!uniqueTickers.length) return;
     try {
@@ -315,12 +297,7 @@ export default function PortfolioOptimizerPage() {
       if (data && data.prices_tail && data.prices_tail.values) {
         for (const [k, vals] of Object.entries(data.prices_tail.values)) {
           const arr: any = vals as any;
-          const price = Number(arr[arr.length - 1] || 0);
-          const key = k.toUpperCase();
-          latestValues[key] = price;
-          if (key.includes(".")) {
-            latestValues[key.split(".")[0]] = price;
-          }
+          latestValues[k.toUpperCase()] = Number(arr[arr.length - 1] || 0);
         }
       }
 
@@ -350,10 +327,7 @@ export default function PortfolioOptimizerPage() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchMarketPrices();
-    }, 600);
-    return () => clearTimeout(timer);
+    fetchMarketPrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows.map((r) => r.ticker).join(",")]);
 
@@ -478,7 +452,7 @@ export default function PortfolioOptimizerPage() {
           {/* Name */}
           {/* Name */}
           <EmberCard title="Identity" className="h-full">
-            <div className="text-sm text-white/60 mb-2">Portfolio Name</div>
+            <label htmlFor="portfolio-name-input" className="text-sm text-white/60 mb-2 block">Portfolio Name</label>
             <input
               className="w-full rounded-xl border border-[#D4A853]/20 bg-black/40 px-3 py-2 text-[#D4A853] outline-none focus:border-[#D4A853]/50 focus:shadow-[0_0_10px_rgba(212,168,83,0.1)] transition-all placeholder-white/20"
               value={name}
@@ -600,6 +574,7 @@ export default function PortfolioOptimizerPage() {
                     <td className="py-2 pr-4">
                       <div className="relative">
                         <input
+                          aria-label="Asset Ticker"
                           className="w-full rounded-lg border border-[#D4A853]/20 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#D4A853]/50 focus:shadow-[0_0_10px_rgba(212,168,83,0.1)] placeholder-white/20 font-mono"
                           value={r.ticker}
                           onChange={(e) => {
@@ -641,6 +616,7 @@ export default function PortfolioOptimizerPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <input
+                        aria-label="Asset Quantity"
                         className="w-full rounded-lg border border-[#D4A853]/20 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#D4A853]/50 focus:shadow-[0_0_10px_rgba(212,168,83,0.1)] placeholder-white/20 font-mono tabular-nums"
                         value={r.quantity}
                         onChange={(e) => updateRow(i, { quantity: e.target.value })}
@@ -650,29 +626,21 @@ export default function PortfolioOptimizerPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="text-left font-mono tabular-nums text-white/80">
-                        {getLivePrice(r.ticker || "") !== null ? (
+                        {marketPrices[r.ticker?.toUpperCase()] ? (
                           <div>
                             <div className="text-[#D4A853]">
-                              {(() => {
-                                const livePrice = getLivePrice(r.ticker || "");
-                                if (livePrice === null) return <span className="text-white/20">—</span>;
-                                return (
-                                  <>
                               {r.currency && r.currency !== "USD" ? (
                                 <span>
-                                  {fmtMoney(livePrice, r.currency, r.currency)}
+                                  {fmtMoney(marketPrices[r.ticker?.toUpperCase()], r.currency, r.currency)}
                                 </span>
                               ) : (
-                                <span>{fmtMoney(livePrice, "USD", "USD")}</span>
+                                <span>{fmtMoney(marketPrices[r.ticker?.toUpperCase()], "USD", "USD")}</span>
                               )}
-                                  </>
-                                );
-                              })()}
                             </div>
                             {/* Show converted value if user currency is different from asset currency */}
                             {(r.currency || "USD") !== userCurrency && (
                               <div className="text-[10px] text-white/40">
-                                ≈ {fmtMoney(((getLivePrice(r.ticker || "") || 0) * (EXCHANGE_RATES[r.currency || "USD"] || 1)), userCurrency)}
+                                ≈ {fmtMoney((marketPrices[r.ticker?.toUpperCase()] * (EXCHANGE_RATES[r.currency || "USD"] || 1)), userCurrency)}
                               </div>
                             )}
                           </div>

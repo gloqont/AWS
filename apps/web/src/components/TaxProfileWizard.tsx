@@ -63,12 +63,46 @@ const DEFAULT_ACCOUNT_TYPES: Record<string, string> = {
     taxable: "Taxable Brokerage Account",
 };
 
-const INCOME_TIERS: Record<string, string> = {
-    low: "Low Income (<$50k)",
-    medium: "Medium Income ($50k – $200k)",
-    high: "High Income ($200k – $500k)",
-    very_high: "Very High / UHNW (>$500k)",
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    USD: "$", INR: "₹", CAD: "C$", EUR: "€", GBP: "£",
 };
+
+function getIncomeTiers(countryCode: string): Record<string, string> {
+    const data = JURISDICTIONS[countryCode] || JURISDICTIONS["US"];
+    const s = CURRENCY_SYMBOLS[data.currency] || "$";
+
+    let l = 50, m = 200, h = 500, unit = "k";
+
+    switch (countryCode) {
+        case "IN":
+            l = 5; m = 15; h = 50; unit = "L"; // Lakhs
+            break;
+        case "GB":
+            l = 30; m = 80; h = 150;
+            break;
+        case "DE":
+        case "FR":
+        case "NL":
+            l = 40; m = 100; h = 200;
+            break;
+        case "CA":
+            l = 60; m = 150; h = 300;
+            break;
+        case "US":
+        default:
+            l = 50; m = 200; h = 500;
+            break;
+    }
+
+    return {
+        low: `Low Income (<${s}${l}${unit})`,
+        medium: `Medium Income (${s}${l}${unit} – ${s}${m}${unit})`,
+        high: `High Income (${s}${m}${unit} – ${s}${h}${unit})`,
+        very_high: `Very High / UHNW (>${s}${h}${unit})`,
+    };
+}
+
+const INCOME_TIERS: Record<string, string> = getIncomeTiers("USD");
 
 export interface TaxProfile {
     taxCountry: string;
@@ -86,7 +120,7 @@ interface TaxProfileWizardProps {
     onClose: () => void;
 }
 
-export { JURISDICTIONS, COUNTRY_ACCOUNT_TYPES, DEFAULT_ACCOUNT_TYPES, INCOME_TIERS };
+export { JURISDICTIONS, COUNTRY_ACCOUNT_TYPES, DEFAULT_ACCOUNT_TYPES, INCOME_TIERS, getIncomeTiers, CURRENCY_SYMBOLS };
 
 export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }: TaxProfileWizardProps) {
     // If initialCountry is provided, start at step 2, otherwise step 1
@@ -138,7 +172,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
 
                 {/* Header */}
                 <div className="p-8 border-b border-white/5 bg-gradient-to-r from-emerald-900/10 to-transparent">
-                    <h2 className="text-2xl font-bold text-white mb-2">🏦 Institutional Tax Setup</h2>
+                    <h2 className="text-2xl font-bold text-white mb-2">Institutional Tax Setup</h2>
                     <p className="text-white/60 text-sm">
                         Configure your tax environment so our engine can simulate precise after-tax outcomes for every decision.
                     </p>
@@ -155,7 +189,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                     {/* Step 1: Country */}
                     {step === 1 && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                            <h3 className="text-xl font-semibold text-white mb-2">👋 Welcome! Select your Country</h3>
+                            <h3 className="text-xl font-semibold text-white mb-2">Welcome! Select your Country</h3>
                             <p className="text-white/50 text-sm mb-6">We'll show the right tax accounts, rates, and rules for your jurisdiction.</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {Object.entries(JURISDICTIONS).map(([code, data]) => (
@@ -167,7 +201,6 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                                             : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                                             }`}
                                     >
-                                        <span className="text-3xl filter drop-shadow-lg">{data.flag}</span>
                                         <span className="font-medium">{data.label}</span>
                                     </button>
                                 ))}
@@ -179,7 +212,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                     {step === 2 && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                             <h3 className="text-xl font-semibold text-white mb-6">
-                                {JURISDICTIONS[profile.taxCountry]?.flag} Refine your {JURISDICTIONS[profile.taxCountry]?.label} tax profile
+                                Refine your {JURISDICTIONS[profile.taxCountry]?.label} tax profile
                             </h3>
                             <div className="space-y-6">
 
@@ -231,7 +264,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                                             value={profile.taxIncomeTier}
                                             onChange={(e) => setProfile({ ...profile, taxIncomeTier: e.target.value })}
                                         >
-                                            {Object.entries(INCOME_TIERS).map(([v, l]) => (
+                                            {Object.entries(getIncomeTiers(profile.taxCountry)).map(([v, l]) => (
                                                 <option key={v} value={v} className="bg-gray-900">{l}</option>
                                             ))}
                                         </select>
@@ -256,7 +289,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                     {step === 3 && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 text-center">
                             <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <span className="text-3xl">✅</span>
+                                <span className="text-emerald-500 text-3xl">✓</span>
                             </div>
                             <h3 className="text-2xl font-bold text-white mb-2">You're All Set!</h3>
                             <p className="text-white/60 mb-8">
@@ -270,7 +303,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                                 <div className="text-xs text-white/40 uppercase tracking-wider mb-3">Configuration Summary</div>
                                 <div className="flex justify-between text-sm mb-2">
                                     <span className="text-white/60">Country</span>
-                                    <span className="text-white">{JURISDICTIONS[profile.taxCountry]?.flag} {JURISDICTIONS[profile.taxCountry]?.label}</span>
+                                    <span className="text-white">{JURISDICTIONS[profile.taxCountry]?.label}</span>
                                 </div>
                                 {profile.taxSubJurisdiction && (
                                     <div className="flex justify-between text-sm mb-2">
@@ -284,7 +317,7 @@ export function TaxProfileWizard({ isOpen, initialCountry, onComplete, onClose }
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-white/60">Income</span>
-                                    <span className="text-white">{INCOME_TIERS[profile.taxIncomeTier] || profile.taxIncomeTier}</span>
+                                    <span className="text-white">{getIncomeTiers(profile.taxCountry)[profile.taxIncomeTier] || profile.taxIncomeTier}</span>
                                 </div>
                             </div>
                         </div>

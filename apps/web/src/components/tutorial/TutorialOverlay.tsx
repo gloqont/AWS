@@ -8,16 +8,6 @@ interface TutorialOverlayProps {
   children: React.ReactNode;
 }
 
-type TutorialOverlayState = {
-  currentStepData: {
-    title: string;
-    description: string;
-    elementId: string;
-  };
-  element: HTMLElement | null;
-  rect: DOMRect | null;
-};
-
 const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
   const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial, completeTutorial } = useTutorial();
   const router = useRouter();
@@ -62,7 +52,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       overlay.style.pointerEvents = 'none';
 
       // Add a slight margin to make the highlight more visible
-      overlay.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.2)';
+      overlay.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.7)';
       overlay.style.borderRadius = '12px';
       overlay.style.transform = 'scale(1.05)'; // Zoom effect
       overlay.style.transition = 'all 0.3s ease';
@@ -70,7 +60,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
   }, [isTutorialActive, currentStep, steps]);
 
   // State to hold the current step data and rect for consistent hook usage
-  const [tutorialState, setTutorialState] = useState<TutorialOverlayState | null>(null);
+  const [tutorialState, setTutorialState] = useState<{ currentStepData: any, element: HTMLElement | null, rect: DOMRect | null } | null>(null);
 
   // Update tutorial state when tutorial is active
   useEffect(() => {
@@ -84,8 +74,8 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
     }
   }, [isTutorialActive, steps, currentStep, steps.length]);
 
-  
-  
+
+
   // Position the tooltip after it renders
   useEffect(() => {
     if (!isTutorialActive || !tutorialState?.rect) return;
@@ -159,7 +149,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
 
   const handleCancel = () => {
     clearTutorialParam();
-    endTutorial();
+    completeTutorial();
   };
 
   const handleFinish = () => {
@@ -173,7 +163,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       {children}
       {/* Overlay to dim the rest of the screen */}
       <div
-        className="fixed inset-0 bg-black/10 z-50 pointer-events-auto"
+        className="fixed inset-0 bg-black/17 z-50 pointer-events-auto"
         style={{ zIndex: 9997 }}
         onClick={handleCancel}
       />
@@ -181,9 +171,9 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       {/* Highlight box around the target element with zoom effect */}
       <div
         ref={overlayRef}
-        className="fixed border-2 border-[#D4A853] rounded-xl z-50 animate-pulse shadow-lg shadow-[#D4A853]/30"
+        className="fixed border-4 border-yellow-400 rounded-xl z-50 animate-pulse shadow-lg shadow-yellow-400/50"
         style={{
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.2)',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.13)',
           borderRadius: '12px',
           transition: 'all 0.3s ease',
           transform: 'scale(1.05)', // Slight zoom effect
@@ -195,7 +185,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       {/* Tooltip with tutorial content - positioned to stay within viewport and avoid overlapping the highlighted element */}
       <div
         id="tutorial-tooltip"
-        className="fixed bg-[#0a0a0a]/95 text-white p-6 rounded-2xl shadow-2xl z-50 max-w-xs sm:max-w-sm md:max-w-md pointer-events-auto border border-[#D4A853]/35"
+        className="fixed bg-gradient-to-br from-white to-gray-50 text-gray-900 p-6 rounded-2xl shadow-2xl z-50 max-w-xs sm:max-w-sm md:max-w-md pointer-events-auto border-2 border-blue-400 shadow-blue-500/30"
         style={{
           left: '50%',
           top: '50%',
@@ -208,25 +198,36 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
         }}
       >
         <div className="mb-4">
-          <h3 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
-            <span className="bg-[#D4A853]/15 text-[#D4A853] border border-[#D4A853]/40 rounded-full w-6 h-6 flex items-center justify-center text-sm">
+          <h3 className="text-xl font-bold text-blue-700 flex items-center gap-2">
+            <span className="bg-blue-100 text-blue-700 rounded-full w-6 h-6 flex items-center justify-center text-sm">
               {currentStep + 1}
             </span>
             {tutorialState?.currentStepData.title}
           </h3>
         </div>
-        <p className="text-white/75 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
+        <p className="text-gray-700 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
 
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0 pt-3 border-t border-white/10">
-          <div className="text-sm text-[#D4A853]/75 font-medium">
-            Step {currentStep + 1} of {steps.length}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0 pt-3 border-t border-gray-200">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-600 font-medium">
+              Step {currentStep + 1} of {steps.length}
+            </div>
+            {currentStep < steps.length - 1 && (
+              <button
+                onClick={handleCancel}
+                className="text-sm text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
+                title="Skip the rest of the tutorial"
+              >
+                Skip Tutorial
+              </button>
+            )}
           </div>
 
           <div className="flex space-x-3">
             {currentStep > 0 && (
               <button
                 onClick={prevStep}
-                className="px-4 py-2 border border-white/15 bg-white/5 text-white rounded-lg hover:bg-white/10 hover:border-[#D4A853]/30 transition-all text-sm font-medium"
+                className="px-4 py-2 bg-gradient-to-r from-gray-200 to-gray-300 text-gray-800 rounded-lg hover:from-gray-300 hover:to-gray-400 transition-all text-sm font-medium shadow-sm"
               >
                 ← Prev
               </button>
@@ -234,7 +235,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
 
             <button
               onClick={currentStep < steps.length - 1 ? nextStep : handleFinish}
-              className="px-4 py-2 bg-[#D4A853] text-black rounded-lg hover:bg-[#c89c45] transition-all text-sm font-semibold shadow-md shadow-[#D4A853]/25"
+              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all text-sm font-medium shadow-md"
             >
               {currentStep < steps.length - 1 ? 'Next →' : 'Finish'}
             </button>

@@ -27,9 +27,9 @@ import {
 
 // Types for visualization data
 type DecisionDeltaData = {
-  before_composition: Array<{symbol: string, weight: number}>;
-  after_composition: Array<{symbol: string, weight: number}>;
-  delta_bar: {symbol: string, change: number};
+  before_composition: Array<{ symbol: string, weight: number }>;
+  after_composition: Array<{ symbol: string, weight: number }>;
+  delta_bar: { symbol: string, change: number };
 };
 
 type RiskFanChartData = {
@@ -40,14 +40,14 @@ type RiskFanChartData = {
 };
 
 type ConcentrationShiftData = {
-  before: Array<{ticker: string, weight: number}>;
-  after: Array<{ticker: string, weight: number}>;
+  before: Array<{ ticker: string, weight: number }>;
+  after: Array<{ ticker: string, weight: number }>;
 };
 
 type RegimeSensitivityData = {
   regime_axes: string[];
-  sensitivity_scores_before: {[key: string]: number};
-  sensitivity_scores_after: {[key: string]: number};
+  sensitivity_scores_before: { [key: string]: number };
+  sensitivity_scores_after: { [key: string]: number };
 };
 
 type IrreversibilityHorizonData = {
@@ -67,9 +67,9 @@ type TimeToDamageGaugeData = {
 };
 
 type RiskReturnPlaneData = {
-  before_point: {risk: number; return: number; label: string};
-  after_point: {risk: number; return: number; label: string};
-  plane_limits: {min_risk: number; max_risk: number; min_return: number; max_return: number};
+  before_point: { risk: number; return: number; label: string };
+  after_point: { risk: number; return: number; label: string };
+  plane_limits: { min_risk: number; max_risk: number; min_return: number; max_return: number };
 };
 
 type ExposureHeatmapData = {
@@ -80,8 +80,8 @@ type ExposureHeatmapData = {
 
 type RecoveryPathData = {
   time_points: number[];
-  historical_recovery_paths: Array<{days: number; recovery_pct: number}>;
-  current_portfolio_recovery: Array<{days: number; recovery_pct: number}>;
+  historical_recovery_paths: Array<{ days: number; recovery_pct: number }>;
+  current_portfolio_recovery: Array<{ days: number; recovery_pct: number }>;
 };
 
 // Helper function to format percentages
@@ -124,20 +124,20 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
             <XAxis dataKey="name" stroke="#aaa" />
             <YAxis stroke="#aaa" />
-            <Tooltip 
+            <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
               formatter={(value) => [`${value}%`, 'Weight']}
             />
             <Legend />
             <Bar dataKey="value" name="Portfolio Weight">
               {chartData.map((entry, index) => (
-                <Cell 
-                  key={`cell-${index}`} 
+                <Cell
+                  key={`cell-${index}`}
                   fill={
-                    entry.type === 'before' ? '#3b82f6' : 
-                    entry.type === 'delta' ? (deltaChange >= 0 ? '#10b981' : '#ef4444') : 
-                    '#8b5cf6'
-                  } 
+                    entry.type === 'before' ? '#3b82f6' :
+                      entry.type === 'delta' ? (deltaChange >= 0 ? '#10b981' : '#ef4444') :
+                        '#10b981'
+                  }
                 />
               ))}
             </Bar>
@@ -156,7 +156,7 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
             </div>
           ))}
         </div>
-        
+
         <div className='bg-gray-800/50 p-3 rounded-lg'>
           <h4 className='text-sm font-medium mb-2'>Δ Change</h4>
           <div className='flex justify-between text-xs py-1'>
@@ -166,7 +166,7 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
             </span>
           </div>
         </div>
-        
+
         <div className='bg-gray-800/50 p-3 rounded-lg'>
           <h4 className='text-sm font-medium mb-2'>After Decision</h4>
           {afterWeights.map((pos, idx) => (
@@ -209,44 +209,44 @@ const EnhancedDownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ da
             margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis 
-              dataKey="time" 
+            <XAxis
+              dataKey="time"
               stroke="#aaa"
-              label={{ value: 'Time (days)', position: 'insideBottomRight', fill: '#aaa' }} 
+              label={{ value: 'Time (days)', position: 'insideBottomRight', fill: '#aaa' }}
             />
-            <YAxis 
+            <YAxis
               stroke="#aaa"
-              label={{ value: 'Risk Level', angle: -90, position: 'insideLeft', fill: '#aaa' }} 
+              label={{ value: 'Risk Level', angle: -90, position: 'insideLeft', fill: '#aaa' }}
             />
-            <Tooltip 
+            <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
             />
             <Legend />
-            <Area 
-              type="monotone" 
-              dataKey="severe_stress_case" 
-              name="Severe Stress" 
-              stackId="1" 
-              stroke="#dc2626" 
-              fill="#dc2626" 
-              fillOpacity={0.2} 
+            <Area
+              type="monotone"
+              dataKey="severe_stress_case"
+              name="Severe Stress"
+              stackId="1"
+              stroke="#dc2626"
+              fill="#dc2626"
+              fillOpacity={0.2}
               strokeWidth={2}
             />
-            <Area 
-              type="monotone" 
-              dataKey="stress_case" 
-              name="Stress Case" 
-              stackId="1" 
-              stroke="#f97316" 
-              fill="#f97316" 
-              fillOpacity={0.3} 
+            <Area
+              type="monotone"
+              dataKey="stress_case"
+              name="Stress Case"
+              stackId="1"
+              stroke="#f97316"
+              fill="#f97316"
+              fillOpacity={0.3}
               strokeWidth={2}
             />
-            <Line 
-              type="monotone" 
-              dataKey="base_case" 
-              name="Base Case" 
-              stroke="#22c55e" 
+            <Line
+              type="monotone"
+              dataKey="base_case"
+              name="Base Case"
+              stroke="#22c55e"
               strokeWidth={3}
               dot={{ r: 4 }}
               activeDot={{ r: 6 }}
@@ -291,13 +291,13 @@ const EnhancedConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
             <XAxis dataKey="ticker" stroke="#aaa" />
             <YAxis stroke="#aaa" />
-            <Tooltip 
+            <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
               formatter={(value) => [`${value}%`, 'Weight']}
             />
             <Legend />
             <Bar dataKey="before" name="Before Decision" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="after" name="After Decision" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="after" name="After Decision" fill="#10b981" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -365,8 +365,8 @@ const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = 
             <Radar
               name="After Decision"
               dataKey="after"
-              stroke="#8b5cf6"
-              fill="#8b5cf6"
+              stroke="#10b981"
+              fill="#10b981"
               fillOpacity={0.3}
             />
             <Tooltip
@@ -435,33 +435,33 @@ const EnhancedIrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHoriz
             margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis 
-              dataKey="period" 
+            <XAxis
+              dataKey="period"
               stroke="#aaa"
-              label={{ value: 'Holding Period (months)', position: 'insideBottomRight', fill: '#aaa' }} 
+              label={{ value: 'Holding Period (months)', position: 'insideBottomRight', fill: '#aaa' }}
             />
-            <YAxis 
+            <YAxis
               stroke="#aaa"
-              label={{ value: 'Irreversible Loss', angle: -90, position: 'insideLeft', fill: '#aaa' }} 
+              label={{ value: 'Irreversible Loss', angle: -90, position: 'insideLeft', fill: '#aaa' }}
             />
-            <Tooltip 
+            <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
             />
             <Legend />
-            <Line 
-              type="monotone" 
-              dataKey="irreversible_loss" 
-              name="Irreversible Loss" 
-              stroke="#ef4444" 
+            <Line
+              type="monotone"
+              dataKey="irreversible_loss"
+              name="Irreversible Loss"
+              stroke="#ef4444"
               strokeWidth={2}
               dot={{ r: 4 }}
               activeDot={{ r: 6 }}
             />
-            <Line 
-              type="monotone" 
-              dataKey="threshold" 
-              name="Recovery Threshold" 
-              stroke="#22c55e" 
+            <Line
+              type="monotone"
+              dataKey="threshold"
+              name="Recovery Threshold"
+              stroke="#22c55e"
               strokeDasharray="5 5"
               strokeWidth={2}
             />
@@ -480,7 +480,7 @@ const EnhancedTimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ 
 
   // Calculate the percentage for the current value
   const percentage = Math.min(1, Math.max(0, (data.current_value || 0) / (data.max_possible || 1)));
-  
+
   // Prepare data for the pie chart (gauge-like)
   const gaugeData = [
     { name: 'Used', value: data.current_value || 0, color: '#ef4444' },
@@ -513,19 +513,19 @@ const EnhancedTimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ 
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <text 
-                x="50%" 
-                y="50%" 
-                textAnchor="middle" 
+              <text
+                x="50%"
+                y="50%"
+                textAnchor="middle"
                 dominantBaseline="middle"
                 className="text-lg font-bold fill-white"
               >
                 {data.current_value || 0}d
               </text>
-              <text 
-                x="50%" 
-                y="60%" 
-                textAnchor="middle" 
+              <text
+                x="50%"
+                y="60%"
+                textAnchor="middle"
                 dominantBaseline="middle"
                 className="text-sm fill-gray-400"
               >
@@ -560,15 +560,15 @@ const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data
 
   // Prepare data for the chart
   const chartData = [
-    { 
-      risk: data.before_point.risk, 
-      return: data.before_point.return, 
+    {
+      risk: data.before_point.risk,
+      return: data.before_point.return,
       label: data.before_point.label,
       type: 'Before'
     },
-    { 
-      risk: data.after_point.risk, 
-      return: data.after_point.return, 
+    {
+      risk: data.after_point.risk,
+      return: data.after_point.return,
       label: data.after_point.label,
       type: 'After'
     }
@@ -587,18 +587,18 @@ const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data
             margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis 
-              type="number" 
-              dataKey="risk" 
-              name="Risk" 
-              label={{ value: 'Risk (Volatility)', position: 'insideBottomRight', fill: '#aaa' }} 
+            <XAxis
+              type="number"
+              dataKey="risk"
+              name="Risk"
+              label={{ value: 'Risk (Volatility)', position: 'insideBottomRight', fill: '#aaa' }}
               stroke="#aaa"
             />
-            <YAxis 
-              type="number" 
-              dataKey="return" 
-              name="Return" 
-              label={{ value: 'Expected Return', angle: -90, position: 'insideLeft', fill: '#aaa' }} 
+            <YAxis
+              type="number"
+              dataKey="return"
+              name="Return"
+              label={{ value: 'Expected Return', angle: -90, position: 'insideLeft', fill: '#aaa' }}
               stroke="#aaa"
             />
             <Tooltip
@@ -609,9 +609,9 @@ const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data
             <Legend />
             <Scatter name="Risk-Return Points" data={chartData}>
               {chartData.map((entry, index) => (
-                <Cell 
-                  key={`cell-${index}`} 
-                  fill={entry.type === 'Before' ? '#3b82f6' : '#8b5cf6'} 
+                <Cell
+                  key={`cell-${index}`}
+                  fill={entry.type === 'Before' ? '#3b82f6' : '#10b981'}
                   stroke="#fff"
                   strokeWidth={2}
                 />
@@ -631,8 +631,8 @@ const EnhancedExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data
   }
 
   // Prepare data for the chart
-  const chartData: Array<{sector: string, region: string, exposure: number}> = [];
-  
+  const chartData: Array<{ sector: string, region: string, exposure: number }> = [];
+
   data.region_labels.forEach((region, rIdx) => {
     data.sector_labels.forEach((sector, sIdx) => {
       chartData.push({
@@ -656,29 +656,29 @@ const EnhancedExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data
             margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis 
-              type="category" 
-              dataKey="sector" 
-              name="Sector" 
+            <XAxis
+              type="category"
+              dataKey="sector"
+              name="Sector"
               stroke="#aaa"
             />
-            <YAxis 
-              type="category" 
-              dataKey="region" 
-              name="Region" 
+            <YAxis
+              type="category"
+              dataKey="region"
+              name="Region"
               stroke="#aaa"
             />
-            <Tooltip 
-              cursor={{ strokeDasharray: '3 3' }} 
+            <Tooltip
+              cursor={{ strokeDasharray: '3 3' }}
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
               formatter={(value) => [`${value}%`, 'Exposure']}
             />
             <Legend />
             <Scatter name="Exposure" data={chartData}>
               {chartData.map((entry, index) => (
-                <Cell 
-                  key={`cell-${index}`} 
-                  fill={`hsl(120, 70%, ${70 - (Math.min(1, entry.exposure) * 40)}%)`} 
+                <Cell
+                  key={`cell-${index}`}
+                  fill={`hsl(120, 70%, ${70 - (Math.min(1, entry.exposure) * 40)}%)`}
                   opacity={0.8}
                 />
               ))}
@@ -717,33 +717,33 @@ const EnhancedRecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ 
             margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis 
-              dataKey="time" 
+            <XAxis
+              dataKey="time"
               stroke="#aaa"
-              label={{ value: 'Time (days)', position: 'insideBottomRight', fill: '#aaa' }} 
+              label={{ value: 'Time (days)', position: 'insideBottomRight', fill: '#aaa' }}
             />
-            <YAxis 
+            <YAxis
               stroke="#aaa"
-              label={{ value: 'Recovery (%)', angle: -90, position: 'insideLeft', fill: '#aaa' }} 
+              label={{ value: 'Recovery (%)', angle: -90, position: 'insideLeft', fill: '#aaa' }}
             />
-            <Tooltip 
+            <Tooltip
               contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
             />
             <Legend />
-            <Line 
-              type="monotone" 
-              dataKey="historical" 
-              name="Historical Analog" 
-              stroke="#60a5fa" 
+            <Line
+              type="monotone"
+              dataKey="historical"
+              name="Historical Analog"
+              stroke="#60a5fa"
               strokeWidth={2}
               dot={{ r: 4 }}
               activeDot={{ r: 6 }}
             />
-            <Line 
-              type="monotone" 
-              dataKey="current" 
-              name="Current Portfolio" 
-              stroke="#fbbf24" 
+            <Line
+              type="monotone"
+              dataKey="current"
+              name="Current Portfolio"
+              stroke="#fbbf24"
               strokeWidth={2}
               dot={{ r: 4 }}
               activeDot={{ r: 6 }}

@@ -20,6 +20,8 @@ from tax_engine.models import (
     HoldingPeriod,
     AssetClass,
     SUPPORTED_JURISDICTIONS,
+    RiskSignal,
+    RiskSignalSeverity,
 )
 
 
@@ -54,6 +56,32 @@ class AbstractTaxStrategy(ABC):
         These depend on the gain/loss amount and holding period.
         """
         pass
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        """
+        Generate quantified risk signals (expected return drag, tail loss delta, etc.)
+        based on the transaction context and calculated tax impact.
+        Override in jurisdiction strategies.
+        """
+        signals: List[RiskSignal] = []
+        eff_rate = tax_impact.effective_tax_rate / 100.0
+        
+        # Generic fallback signal (if no jurisdiction-specific logic catches it)
+        if eff_rate > 0:
+            signals.append(RiskSignal(
+                title=f"{self.JURISDICTION_NAME} Tax Drag",
+                severity="MEDIUM" if eff_rate > 0.05 else "LOW",
+                expected_return_drag_pct=round(-eff_rate * 100, 2),
+                mechanism=f"Blended Tax Rate ({self.JURISDICTION_NAME})"
+            ))
+            
+        return signals
 
     def calculate(
         self,

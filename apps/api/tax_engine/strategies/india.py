@@ -20,6 +20,7 @@ from tax_engine.core import AbstractTaxStrategy
 from tax_engine.models import (
     TaxProfile, PortfolioTaxContext, TransactionDetail,
     TaxLayer, HoldingPeriod, AssetClass, AccountType, IncomeTier,
+    RiskSignal, RiskSignalSeverity, TaxImpact
 )
 
 
@@ -247,4 +248,73 @@ class IndiaTaxStrategy(AbstractTaxStrategy):
             description=f"Securities Transaction Tax on {direction} ({rate*100:.3f}%)",
             applies_to="transaction_value",
         )
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        if tax_impact.total_tax_liability <= 0 and not tax_impact.layers:
+            return signals
+
+        # 1. Short-Term Turnover Drag
+        has_short_term = portfolio_ctx.holding_period == HoldingPeriod.SHORT_TERM
+        gain = tax_impact.estimated_gain_usd
+        if has_short_term and gain > 0:
+            # 15% STCG vs 10% LTCG for equity
+            spread = 0.05
+            tail_delta = round(spread * 100 * 0.05, 2)
+            expected_drag = round(tax_impact.effective_tax_rate, 2)
+            
+            signals.append(RiskSignal(
+                title="Short-Term Turnover Drag",
+                severity=RiskSignalSeverity.MEDIUM if expected_drag > 0.15 else RiskSignalSeverity.LOW,
+                tail_loss_delta_pct=tail_delta,
+                expected_return_drag_pct=-expected_drag,
+                mechanism="15% STCG vs 10% LTCG spread compression"
+            ))
+
+        # 2. Execution Friction Density
+        stt_stamp_layers = [l for l in tax_impact.layers if l.category == "transaction"]
+        if stt_stamp_layers:
+            total_friction_rate = sum(l.rate for l in stt_stamp_layers) / 100.0
+            if total_friction_rate > 0.001:  # > 0.1% friction
+                signals.append(RiskSignal(
+                    title="Execution Friction Density",
+                    severity=RiskSignalSeverity.MEDIUM if total_friction_rate > 0.002 else RiskSignalSeverity.LOW,
+                    volatility_impact_pct=round(total_friction_rate * 100 * 0.5, 2),  # heuristic Vol drag
+                    mechanism="Cumulative STT + Stamp Duty drag"
+                ))
+
+        # 3. LTCG Threshold Utilization
+        # If long term equity, and gain is under 1L INR (~1200 USD)
+        if not has_short_term and gain > 0:
+            is_equity = any(t.asset_class in (AssetClass.EQUITY_DOMESTIC, AssetClass.ETF) for t in transactions)
+            if is_equity:
+                exemption_usd = 1200.0
+                if gain < exemption_usd:
+                    buffer_left = exemption_usd - gain
+                    signals.append(RiskSignal(
+                        title="LTCG Threshold Utilization",
+                        severity=RiskSignalSeverity.LOW,
+                        available_offset_usd=round(buffer_left, 2),
+                        risk_dampening_potential_pct=10.0,
+                        mechanism="₹1L tax-free statutory buffer"
+                    ))
+
+        # 4. Slab Exposure (Debt / F&O)
+        has_slab_exposure = any(t.asset_class in (AssetClass.DEBT_FUND, AssetClass.BOND, AssetClass.FUTURES, AssetClass.OPTIONS) for t in transactions)
+        if has_slab_exposure and gain > 0:
+            slab_rate = INDIA_SLAB_RATES.get(profile.income_tier, 0.30)
+            signals.append(RiskSignal(
+                title="Slab Amplification Exposure",
+                severity=RiskSignalSeverity.HIGH if slab_rate >= 0.30 else RiskSignalSeverity.MEDIUM,
+                tail_loss_delta_pct=round(slab_rate * 100 * 0.1, 2),
+                mechanism="Income slab amplifies tail loss under profit scenarios (No Indexation)"
+            ))
+
+        return signals
 

@@ -48,6 +48,37 @@ export default function OnboardingFlow() {
         }, 100);
     };
 
+    const handleSkipAll = () => {
+        // Use default tax profile
+        const defaultTax: TaxProfile = {
+            taxCountry: "US",
+            taxSubJurisdiction: null,
+            taxAccountType: "taxable",
+            taxIncomeTier: "medium",
+            taxFilingStatus: "single",
+            taxHoldingPeriod: "short_term"
+        };
+        localStorage.setItem("gloqont_tax_profile", JSON.stringify(defaultTax));
+
+        // Use default investment profile
+        const defaultInv: UserProfile = {
+            country: "US",
+            currency: "USD",
+            experience: "intermediate",
+            riskBudget: "MEDIUM",
+            onboardingCompleted: true,
+        };
+        localStorage.setItem("gloqont_user_profile", JSON.stringify(defaultInv));
+
+        sessionStorage.setItem("gloqont_onboarding_shown", "true");
+        localStorage.setItem("hasCompletedTutorial_v2", "true");
+        setStep("completed");
+
+        setTimeout(() => {
+            router.push("/dashboard/portfolio-optimizer");
+        }, 100);
+    };
+
     if (step === "check" || step === "completed") {
         return null;
     }
@@ -57,20 +88,15 @@ export default function OnboardingFlow() {
             <TutorialCompletionQuestionnaire
                 isOpen={step === "investment"}
                 onComplete={handleInvestmentComplete}
-            // No create/close handlers needed as we control the flow
+                onSkip={handleSkipAll}
             />
 
             <TaxProfileWizard
                 isOpen={step === "tax"}
                 initialCountry={investmentProfile?.country}
                 onComplete={handleTaxComplete}
+                onSkip={handleSkipAll}
                 onClose={() => {
-                    // If they try to close it, we should probably just keep it open or treated as complete?
-                    // The requirement is "make them in one like everytime i log in... should immediately be present"
-                    // So we probably shouldn't allow closing without completion, OR closing skips to tutorial.
-                    // Let's treat close as 'skip remaining' but still trigger tutorial? 
-                    // Better to enforce completion as per "no matter so now both of these would come"
-                    // But for safety, if they forcibly close, let's move to next step.
                     handleTaxComplete({} as TaxProfile);
                 }}
             />

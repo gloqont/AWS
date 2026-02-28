@@ -84,7 +84,7 @@ export function TutorialCompletionQuestionnaire({ isOpen, onComplete, initialPro
 
                 {/* Header */}
                 <div className="p-8 border-b border-white/5 bg-gradient-to-r from-blue-900/10 to-transparent">
-                    <h2 className="text-2xl font-bold text-white mb-2">🚀 Profile Setup</h2>
+                    <h2 className="text-2xl font-bold text-white mb-2">Profile Setup</h2>
                     <p className="text-white/60 text-sm">
                         Let's customize GLOQONT for your region and investment style.
                     </p>
@@ -113,7 +113,6 @@ export function TutorialCompletionQuestionnaire({ isOpen, onComplete, initialPro
                                             : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/10 hover:text-white'
                                             }`}
                                     >
-                                        <span className="text-3xl filter drop-shadow-lg">{data.flag}</span>
                                         <span className="font-medium">{data.label}</span>
                                     </button>
                                 ))}

@@ -21,9 +21,8 @@ Special:
 from typing import List
 from tax_engine.core import AbstractTaxStrategy
 from tax_engine.models import (
-    TaxProfile, PortfolioTaxContext, TransactionDetail,
     TaxLayer, HoldingPeriod, AssetClass, AccountType, IncomeTier,
-    FilingStatus,
+    FilingStatus, RiskSignal, RiskSignalSeverity, TaxImpact
 )
 
 
@@ -232,3 +231,73 @@ class USATaxStrategy(AbstractTaxStrategy):
                 applies_to="realized_gain",
             )
         ]
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        if tax_impact.total_tax_liability <= 0:
+            return signals
+
+        # 1. Short-Term Realization Risk
+        # Triggered if holding period is short term and there's capital gains
+        has_short_term = portfolio_ctx.holding_period == HoldingPeriod.SHORT_TERM
+        gain = tax_impact.estimated_gain_usd
+        if has_short_term and gain > 0:
+            # Approximate the drag from the higher tax rate vs long-term
+            lt_rate = FEDERAL_LTCG_RATES.get(profile.income_tier, 0.15)
+            st_rate = FEDERAL_STCG_RATES.get(profile.income_tier, 0.22)
+            spread = max(0, st_rate - lt_rate)
+            
+            # Additional tail loss delta approx based on the tax spread compressing upside while
+            # leaving downside unhedged before year-end. 
+            tail_delta = round(spread * 100 * 0.05, 2)  # heuristic representation
+            expected_drag = round(tax_impact.effective_tax_rate, 2)
+            
+            # Severity mapping based on actual drag
+            drag_val = abs(expected_drag)
+            if drag_val > 0.30:
+                sev = RiskSignalSeverity.HIGH
+            elif drag_val > 0.10:
+                sev = RiskSignalSeverity.MEDIUM
+            else:
+                sev = RiskSignalSeverity.LOW
+
+            signals.append(RiskSignal(
+                title="Short-Term Realization Risk",
+                severity=sev,
+                tail_loss_delta_pct=tail_delta,
+                expected_return_drag_pct=-expected_drag,
+                mechanism="Ordinary income taxation layer"
+            ))
+
+        # 2. State Amplification Signal
+        state_code = profile.sub_jurisdiction or "NONE"
+        state_info = STATE_CG_RATES.get(state_code, STATE_CG_RATES["NONE"])
+        rate = state_info["rate"]
+        if rate > 0.05:
+            # High state tax amplifies drag
+            vol_impact = round(rate * 100 * 0.1, 2) # heuristic volatility impact penalty
+            signals.append(RiskSignal(
+                title="State Amplification Signal",
+                severity=RiskSignalSeverity.MEDIUM if rate < 0.10 else RiskSignalSeverity.HIGH,
+                expected_return_drag_pct=-round(rate * 100, 2),
+                volatility_impact_pct=vol_impact,
+                mechanism=f"State taxation layer ({state_code})"
+            ))
+
+        # 3. NIIT Threshold Exposure
+        if profile.income_tier in NIIT_APPLIES_TO:
+            signals.append(RiskSignal(
+                title="NIIT Threshold Exposure",
+                severity=RiskSignalSeverity.HIGH,
+                expected_return_drag_pct=-round(NIIT_RATE * 100, 2),
+                mechanism="Nonlinear jump in effective rate (NIIT +3.8%)"
+            ))
+            
+        return signals
+

@@ -22,6 +22,7 @@ from tax_engine.core import AbstractTaxStrategy
 from tax_engine.models import (
     TaxProfile, PortfolioTaxContext, TransactionDetail,
     TaxLayer, HoldingPeriod, AssetClass, AccountType, IncomeTier,
+    RiskSignal, RiskSignalSeverity, TaxImpact
 )
 
 
@@ -137,3 +138,42 @@ class CanadaTaxStrategy(AbstractTaxStrategy):
         ))
 
         return layers
+
+    def generate_signals(
+        self,
+        profile: TaxProfile,
+        portfolio_ctx: PortfolioTaxContext,
+        transactions: List[TransactionDetail],
+        tax_impact: TaxImpact,
+    ) -> List[RiskSignal]:
+        signals: List[RiskSignal] = []
+        if tax_impact.total_tax_liability <= 0:
+            return signals
+
+        # 1. Inclusion Cushion Signal
+        # Because only 50% of the gain is taxable, after-tax volatility forms a milder dampening effect
+        # compared to 100% inclusion regimes (like US short-term).
+        province = profile.sub_jurisdiction or "ON"
+        province_rates = COMBINED_MARGINAL_RATES.get(province, DEFAULT_MARGINAL_RATES)
+        marginal_rate = province_rates.get(profile.income_tier, 0.30)
+        
+        expected_drag = round(tax_impact.effective_tax_rate, 2)
+
+        signals.append(RiskSignal(
+            title="Inclusion Cushion Signal",
+            severity=RiskSignalSeverity.LOW,
+            expected_return_drag_pct=-expected_drag,
+            tail_loss_delta_pct=round(expected_drag * 0.5, 2), # 50% inclusion softens the blow
+            mechanism="50% Inclusion Rate dampens after-tax volatility"
+        ))
+
+        # 2. Provincial Amplification
+        if marginal_rate > 0.45:
+            signals.append(RiskSignal(
+                title="Provincial Amplification",
+                severity=RiskSignalSeverity.MEDIUM,
+                expected_return_drag_pct=-round(marginal_rate * INCLUSION_RATE * 100, 2),
+                mechanism=f"High provincial marginal rate ({province})"
+            ))
+
+        return signals

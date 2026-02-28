@@ -9,6 +9,7 @@ import { ActGenesis } from "./ActGenesis";
 import { ActSteps } from "./ActSteps";
 import { ActTerrain } from "./ActTerrain";
 import { ActLogin } from "./ActLogin";
+import { StoryFooter } from "./StoryFooter";
 
 export default function StoryLayout() {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +36,9 @@ export default function StoryLayout() {
 
                 {/* Act VI: Login */}
                 <ActLogin />
+
+                {/* Privacy, Security & Legal Footer */}
+                <StoryFooter />
             </div>
         </div>
     );

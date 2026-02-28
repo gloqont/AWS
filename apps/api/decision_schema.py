@@ -277,6 +277,7 @@ class DecisionComparison(BaseModel):
     baseline_volatility: float = Field(default=0.0)
     baseline_var_95: float = Field(default=0.0)
     baseline_max_drawdown: float = Field(default=0.0)
+    baseline_max_drawdown_p5: float = Field(default=0.0)
     baseline_tail_loss: float = Field(default=0.0)
     
     # Scenario metrics (with decision)
@@ -284,6 +285,7 @@ class DecisionComparison(BaseModel):
     scenario_volatility: float = Field(default=0.0)
     scenario_var_95: float = Field(default=0.0)
     scenario_max_drawdown: float = Field(default=0.0)
+    scenario_max_drawdown_p5: float = Field(default=0.0)
     scenario_tail_loss: float = Field(default=0.0)
     
     # Deltas

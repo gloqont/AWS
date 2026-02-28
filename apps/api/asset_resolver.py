@@ -24,6 +24,37 @@ class AssetInfo:
     sector: str
     asset_type: str  # STOCK, ETF, CRYPTO, etc.
     is_valid: bool = True
+    currency: str = "USD"  # Trading currency (USD, INR, GBP, EUR, etc.)
+
+
+# Derive currency from ticker suffix
+TICKER_SUFFIX_CURRENCY = {
+    ".NS": "INR", ".BO": "INR",  # India (NSE/BSE)
+    ".L": "GBP", ".IL": "GBP",  # London
+    ".TO": "CAD", ".V": "CAD",   # Canada (TSX/TSXV)
+    ".AX": "AUD",                # Australia
+    ".T": "JPY",                 # Japan (Tokyo)
+    ".HK": "HKD",               # Hong Kong
+    ".SI": "SGD",               # Singapore
+    ".DE": "EUR", ".PA": "EUR", ".AS": "EUR", ".MI": "EUR",  # Europe
+}
+
+COUNTRY_CURRENCY_MAP = {
+    "India": "INR", "Canada": "CAD", "United Kingdom": "GBP",
+    "Australia": "AUD", "Japan": "JPY", "Singapore": "SGD",
+    "Hong Kong": "HKD", "Germany": "EUR", "France": "EUR", 
+    "Netherlands": "EUR", "Italy": "EUR", "China": "CNY",
+}
+
+def _currency_from_symbol(symbol: str, country: str = "") -> str:
+    """Derive trading currency from ticker suffix, with country fallback."""
+    for suffix, currency in TICKER_SUFFIX_CURRENCY.items():
+        if symbol.upper().endswith(suffix):
+            return currency
+    # Fallback: if country is known (e.g. from Nifty 50 dict), use that
+    if country and country in COUNTRY_CURRENCY_MAP:
+        return COUNTRY_CURRENCY_MAP[country]
+    return "USD"
 
 
 class CanonicalAssetResolver:
@@ -155,7 +186,8 @@ class CanonicalAssetResolver:
                 name=info['name'],
                 country=info['country'],
                 sector=info['sector'],
-                asset_type='STOCK'
+                asset_type='STOCK',
+                currency=_currency_from_symbol(symbol, info['country'])
             )
         
         # Check in crypto symbols
@@ -166,7 +198,8 @@ class CanonicalAssetResolver:
                 name=info['name'],
                 country=info['country'],
                 sector=info['sector'],
-                asset_type='CRYPTO'
+                asset_type='CRYPTO',
+                currency='USD'
             )
         
         # Check in US symbols
@@ -177,8 +210,24 @@ class CanonicalAssetResolver:
                 name=info['name'],
                 country=info['country'],
                 sector=info['sector'],
-                asset_type='STOCK'
+                asset_type='STOCK',
+                currency='USD'
             )
+        
+        # Auto-resolve Indian tickers: try .NS and .BO suffixes for bare symbols
+        if '.' not in symbol:
+            for suffix in ['.NS', '.BO']:
+                suffixed = symbol + suffix
+                if suffixed in self.nifty_50_symbols:
+                    info = self.nifty_50_symbols[suffixed]
+                    return AssetInfo(
+                        symbol=suffixed,
+                        name=info['name'],
+                        country=info['country'],
+                        sector=info['sector'],
+                        asset_type='STOCK',
+                        currency=_currency_from_symbol(suffixed, info['country'])
+                    )
         
         # Try to validate with yfinance as a fallback
         try:
@@ -213,11 +262,12 @@ class CanonicalAssetResolver:
                         pass
                         
                     return AssetInfo(
-                        symbol=symbol, # Use input symbol as canonical if we found it
+                        symbol=symbol,
                         name=long_name,
                         country=country,
                         sector=sector,
-                        asset_type=asset_type
+                        asset_type=asset_type,
+                        currency=_currency_from_symbol(symbol)
                     )
             except:
                 # fast_info access failed, fall back to history check
@@ -229,10 +279,11 @@ class CanonicalAssetResolver:
                  # It has history, so it exists
                 return AssetInfo(
                     symbol=symbol,
-                    name=symbol, # Fallback name
-                    country='Global', # Fallback
-                    sector='Unknown', # Fallback
-                    asset_type='STOCK'
+                    name=symbol,
+                    country='Global',
+                    sector='Unknown',
+                    asset_type='STOCK',
+                    currency=_currency_from_symbol(symbol)
                 )
 
         except Exception:

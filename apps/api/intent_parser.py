@@ -50,10 +50,10 @@ class IntentParser:
         re.IGNORECASE
     )
     
-    # Dollar amount pattern: "$5000", "5000 dollars", "5k"
-    # STRICTER: Require $ prefix OR 'dollars'/'usd' suffix. prevent matching "5" or "10" as dollars
+    # Dollar amount pattern: "$5000", "5000 dollars", "5k", "₹5000", "C$500", "€100"
+    # STRICTER: Require currency prefix OR currency suffix. prevent matching "5" or "10" 
     DOLLAR_PATTERN = re.compile(
-        r"(?:\$\s*(\d+(?:\.\d+)?)\s*(?:k|m|b|million|billion)?)|(?:(\d+(?:\.\d+)?)\s*(?:dollars|usd|million dollars))",
+        r"(?:[\$₹£€]|C\$)\s*(\d+(?:\.\d+)?)\s*(?:k|m|b|million|billion)?|(?:(\d+(?:\.\d+)?)\s*(?:dollars|usd|rs|inr|rupees|euros|eur|cad|gbp|million dollars))",
         re.IGNORECASE
     )
     
@@ -225,8 +225,8 @@ class IntentParser:
         decision = self._parse_heuristic(text, portfolio)
         
         # 2. LLM Fallback (if confidence low)
-        # Note: We check for API key availability inside _parse_llm or before calling
-        if decision.confidence_score < 0.95 and self.llm_client is not None:
+        # We check for API key availability inside _parse_llm
+        if decision.confidence_score < 0.95:
              # Try LLM
              try:
                  llm_decision = self._parse_llm(text, portfolio, decision)
@@ -577,8 +577,43 @@ class IntentParser:
                         amt *= 1000000
                     elif 'b' in full_match or 'billion' in full_match:
                         amt *= 1000000000
-                        
-                    size_usd = amt
+                    
+                    # FX CONVERSION: Detect non-USD currency symbols and convert to actual USD
+                    # Without this, ₹2300 gets stored as size_usd=2300, then the frontend
+                    # multiplies by 83.5 again (USD→INR) producing ₹1,92,050 instead of ₹2,300
+                    HEURISTIC_FX_RATES = {
+                        "₹": 83.5,   # INR to USD divisor
+                        "£": 0.79,   # GBP to USD divisor
+                        "€": 0.92,   # EUR to USD divisor
+                    }
+                    # Check which currency symbol was matched
+                    raw_match = usd_match.group(0)
+                    detected_currency_divisor = None
+                    for symbol_char, divisor in HEURISTIC_FX_RATES.items():
+                        if symbol_char in raw_match:
+                            detected_currency_divisor = divisor
+                            break
+                    # Also check suffix-based: "rs", "inr", "rupees"
+                    if detected_currency_divisor is None:
+                        suffix_lower = full_match
+                        if any(kw in suffix_lower for kw in ["rs", "inr", "rupees"]):
+                            detected_currency_divisor = 83.5
+                        elif any(kw in suffix_lower for kw in ["euros", "eur"]):
+                            detected_currency_divisor = 0.92
+                        elif any(kw in suffix_lower for kw in ["gbp"]):
+                            detected_currency_divisor = 0.79
+                        elif "c$" in raw_match.lower() or "cad" in suffix_lower:
+                            detected_currency_divisor = 1.35
+                    
+                    if detected_currency_divisor and detected_currency_divisor > 1.0:
+                        # Non-USD currency: convert to USD by dividing
+                        size_usd = amt / detected_currency_divisor
+                    elif detected_currency_divisor and detected_currency_divisor < 1.0:
+                        # EUR/GBP: 1 EUR = ~1.09 USD, so multiply by (1/rate)
+                        size_usd = amt / detected_currency_divisor
+                    else:
+                        # USD or unknown: keep as-is
+                        size_usd = amt
             except ValueError:
                 pass
 
@@ -674,14 +709,15 @@ class IntentParser:
                         for p in positions[:10]
                     )
             
-            prompt = f"""You are a strict financial intent parser. Convert the user input into a JSON object.
+            prompt = f"""You are a strict, highly robust financial intent parser. Convert the user input into a JSON object.
+The user's input might be grammatically incorrect, highly colloquial, or very unique ("unique decisions"). You must adapt and infer their financial intent accurately.
 Do NOT compute, simulate, or advise. Only extract intent.
 
 User Input: "{text}"
 {portfolio_context}
 
 IMPORTANT: 
-- For trades: Extract action, ticker, size, and TIMING (if 'after X days/hours').
+- For trades: Extract action, ticker, size, and TIMING (if 'after X days/hours'). Identify tickers even if slightly misspelled. For absolute fiat currencies (e.g. ₹23000, €500), extract the numerical value. If the currency is NOT USD, you MUST mathematically convert it to USD by DIVIDING the raw number by these approximate exchange rates (1 USD = 83.5 INR, 0.92 EUR, 0.79 GBP, 1.35 CAD, 1.54 AUD) and put the final computed USD value into `size_usd`. NEVER put the raw foreign currency number directly into `size_usd` without dividing it first. Do NOT include the currency symbol in the output JSON.
 - For macro scenarios: If user asks "What if rates rise?", output a "market_shock".
 - For sector shocks: "What if tech crashes 20%?" -> "market_shock" on target "TECH" with magnitude -20.0.
 
@@ -704,6 +740,7 @@ Output strict JSON with this schema:
       "instrument": "TICKER (uppercase)",
       "size_percent": float | null,
       "size_usd": float | null,
+      "size_shares": float | null,
       "timing_type": "immediate" | "delay",
       "delay_days": int (default 0)
     }}
@@ -729,6 +766,10 @@ JSON: {{"intent":"Transfer 40% from AAPL to MSFT","decision_type":"rebalance","a
 4. Conditional:
 Input: "Short Tesla if it drops 5%"
 JSON: {{"intent":"Conditional short on TSLA price drop","decision_type":"trade","actions":[{{"action":"short","instrument":"TSLA","size_percent":null,"timing_type":"immediate","delay_days":0}}],"ambiguity_score":0.3,"confidence_score":0.7}}
+
+5. Absolute Fiat Buy in other currencies:
+Input: "Buy TCS ₹50000 more"
+JSON: {{"intent":"Buy more TCS","decision_type":"trade","actions":[{{"action":"buy","instrument":"TCS.NS","size_usd":598.80,"timing_type":"immediate","delay_days":0}}],"ambiguity_score":0.05,"confidence_score":0.98}}
 """
 
             response = model.generate_content(prompt)
@@ -796,6 +837,7 @@ JSON: {{"intent":"Conditional short on TSLA price drop","decision_type":"trade",
                     direction=direction_map.get(direction_str, Direction.BUY),
                     size_percent=action_data.get("size_percent"),
                     size_usd=action_data.get("size_usd"),
+                    size_shares=action_data.get("size_shares"),
                     timing=timing,
                     constraints=constraints
                 )

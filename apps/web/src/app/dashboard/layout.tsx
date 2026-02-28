@@ -9,7 +9,7 @@ import {
   JURISDICTIONS,
   COUNTRY_ACCOUNT_TYPES,
   DEFAULT_ACCOUNT_TYPES,
-  INCOME_TIERS,
+  getIncomeTiers,
 } from "@/components/TaxProfileWizard";
 import type { TaxProfile } from "@/components/TaxProfileWizard";
 import OnboardingFlow from "@/components/onboarding/OnboardingFlow";
@@ -23,19 +23,10 @@ const nav = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [authReady, setAuthReady] = useState(false);
-  const [isAuthed, setIsAuthed] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [isTaxWizardOpen, setIsTaxWizardOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [isLightTheme, setIsLightTheme] = useState(false);
   const [savedProfile, setSavedProfile] = useState<TaxProfile | null>(null);
-  const [authUser, setAuthUser] = useState<{
-    email?: string | null;
-    sub?: string | null;
-    role?: string | null;
-    provider?: string | null;
-  } | null>(null);
 
   // Persist collapsed state
   useEffect(() => {
@@ -54,63 +45,55 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const theme = localStorage.getItem("theme_preference");
     if (theme === "light") {
       document.documentElement.classList.add("theme-light");
-      setIsLightTheme(true);
     } else {
       document.documentElement.classList.remove("theme-light");
-      setIsLightTheme(false);
     }
   }, []);
 
-  // Check if we need to show settings/profile updates manually
+  // Check if we need to show settings/profile updates
+  // Re-read on wizard close, on pathname change, and poll for questionnaire updates
   useEffect(() => {
-    const raw = localStorage.getItem("gloqont_tax_profile");
-    if (raw) {
-      try {
-        setSavedProfile(JSON.parse(raw));
-      } catch {
-        // ignore
+    const loadProfile = () => {
+      const raw = localStorage.getItem("gloqont_tax_profile");
+      if (raw) {
+        try {
+          setSavedProfile(JSON.parse(raw));
+        } catch {
+          // ignore
+        }
+      } else {
+        setSavedProfile(null);
       }
-    }
-  }, [isTaxWizardOpen]); // Reload when wizard closes (if opened manually)
-
-  // Gate dashboard routes behind backend session auth.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const me = await apiFetch("/api/v1/auth/me");
-        if (!active) return;
-        setAuthUser(me?.user ?? null);
-        setIsAuthed(true);
-      } catch {
-        if (!active) return;
-        setAuthUser(null);
-        setIsAuthed(false);
-        router.replace(`/login?next=${encodeURIComponent(pathname || "/dashboard/portfolio-optimizer")}`);
-      } finally {
-        if (active) setAuthReady(true);
-      }
-    })();
-
-    return () => {
-      active = false;
     };
-  }, [pathname, router]);
+    loadProfile();
+
+    // Poll every 2s to catch questionnaire updates
+    const interval = setInterval(loadProfile, 2000);
+    // Also listen for focus (user returns to tab)
+    window.addEventListener("focus", loadProfile);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", loadProfile);
+    };
+  }, [isTaxWizardOpen, pathname]); // Reload when wizard closes or page changes
 
   async function logout() {
-    // Clear auth-related and session-specific state on logout
-    // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
-    localStorage.removeItem("hasCompletedTutorial_v2");
-    localStorage.removeItem("gloqont_tax_profile");
-    localStorage.removeItem("portfolio_rows");
-    localStorage.removeItem("portfolio_name");
-    localStorage.removeItem("portfolio_risk");
+    try {
+      await apiFetch("/api/v1/auth/logout", { method: "POST" });
+    } finally {
+      // Clear auth-related and session-specific state on logout
+      // Note: gloqont_user_profile is kept across logouts (it's preferences, not auth)
+      localStorage.removeItem("hasCompletedTutorial_v2");
+      localStorage.removeItem("gloqont_tax_profile");
+      localStorage.removeItem("portfolio_rows");
+      localStorage.removeItem("portfolio_name");
+      localStorage.removeItem("portfolio_risk");
 
-    sessionStorage.removeItem("tutorialShownThisSession");
-    sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
+      sessionStorage.removeItem("tutorialShownThisSession");
+      sessionStorage.removeItem("gloqont_onboarding_shown"); // Clear this so it shows again on next login
 
-    // Use backend redirect to clear local session and Cognito hosted session
-    window.location.href = "/api/v1/auth/logout?next=/login";
+      window.location.href = "/login";
+    }
   }
 
   const handleWizardComplete = (profile: TaxProfile) => {
@@ -120,6 +103,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const resetProfile = () => {
     localStorage.removeItem("gloqont_tax_profile");
+    localStorage.removeItem("gloqont_user_profile");
+    localStorage.removeItem("hasCompletedTutorial_v2");
+    sessionStorage.removeItem("tutorialShownThisSession");
+    sessionStorage.removeItem("gloqont_onboarding_shown");
     setSavedProfile(null);
     setShowSettings(false);
     setIsTaxWizardOpen(true);
@@ -128,14 +115,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const accountTypes = savedProfile
     ? (COUNTRY_ACCOUNT_TYPES[savedProfile.taxCountry] || DEFAULT_ACCOUNT_TYPES)
     : {};
-
-  if (!authReady || !isAuthed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white/70">
-        Checking session...
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex">
@@ -168,7 +147,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <div className={collapsed ? "hidden" : "min-w-0"}>
                 <div className="text-xs text-white/60">GLOQONT</div>
-                <div className="text-sm font-semibold tracking-tight">Admin Console</div>
+                <div className="text-sm font-semibold tracking-tight">Advisor Console</div>
               </div>
             </div>
 
@@ -235,34 +214,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Bottom Section — Settings + Theme + Logout */}
           <div className={collapsed ? "px-3 pb-4 flex flex-col items-center gap-2" : "px-3 pb-4 space-y-2"}>
-            {authUser && (
-              <div
-                className={[
-                  "rounded-xl border border-[#D4A853]/20 bg-black/40",
-                  collapsed ? "h-10 w-10 flex items-center justify-center text-[11px] font-semibold text-[#D4A853]" : "px-3 py-2",
-                ].join(" ")}
-                title={authUser.email || authUser.sub || "Signed-in account"}
-              >
-                {collapsed ? (
-                  <span>{(authUser.email || authUser.sub || "U").slice(0, 1).toUpperCase()}</span>
-                ) : (
-                  <>
-                    <div className="text-xs uppercase tracking-wider text-[#D4A853]/75">Signed in</div>
-                    <div className="text-sm font-medium text-white truncate">{authUser.email || authUser.sub || "Unknown user"}</div>
-                    <div className="text-xs text-white/60 capitalize">
-                      {(authUser.provider || "local")} • {(authUser.role || "user")}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
 
             {/* ⚙ Settings Button */}
             <button
               onClick={() => setShowSettings(!showSettings)}
               className={[
                 "rounded-xl border transition-colors",
-                collapsed ? "h-10 w-10 text-sm border-white/10 bg-white/5 hover:bg-white/10" : "w-full px-3 py-2 text-[15px] flex items-center justify-center gap-2",
+                collapsed ? "h-10 w-10 text-sm border-white/10 bg-white/5 hover:bg-white/10" : "w-full px-3 py-2 text-sm text-left flex items-center gap-2",
                 showSettings
                   ? "bg-[#D4A853]/10 border-[#D4A853]/30 text-[#D4A853]"
                   : "border-white/10 bg-white/5 hover:bg-white/10 hover:border-[#D4A853]/30 hover:text-[#D4A853]",
@@ -299,7 +257,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-white/50">Income</span>
-                      <span className="text-white">{INCOME_TIERS[savedProfile.taxIncomeTier] || savedProfile.taxIncomeTier}</span>
+                      <span className="text-white">{getIncomeTiers(savedProfile.taxCountry)[savedProfile.taxIncomeTier] || savedProfile.taxIncomeTier}</span>
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-white/50">Filing</span>
@@ -332,29 +290,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 if (html.classList.contains("theme-light")) {
                   html.classList.remove("theme-light");
                   localStorage.setItem("theme_preference", "dark");
-                  setIsLightTheme(false);
                 } else {
                   html.classList.add("theme-light");
                   localStorage.setItem("theme_preference", "light");
-                  setIsLightTheme(true);
                 }
               }}
               className={[
                 "rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-[#D4A853]/30 hover:text-[#D4A853] transition-colors",
-                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-[15px]",
+                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-sm",
               ].join(" ")}
               title="Toggle Theme"
             >
-              {collapsed ? (isLightTheme ? "🌙" : "☀️") : `${isLightTheme ? "🌙" : "☀️"} Toggle Theme`}
+              {collapsed ? "◑" : "Toggle Theme"}
             </button>
             <button
               onClick={logout}
               className={[
                 "rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-red-500/30 hover:text-red-400 transition-colors",
-                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-[15px]",
+                collapsed ? "h-10 w-10 text-sm" : "w-full px-3 py-2 text-sm",
               ].join(" ")}
             >
-              {collapsed ? "⎋" : "⎋ Logout"}
+              {collapsed ? "⎋" : "Logout"}
             </button>
           </div>
 
