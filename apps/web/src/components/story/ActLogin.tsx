@@ -49,41 +49,6 @@ export function ActLogin() {
                 <div className="absolute -inset-1 bg-gradient-to-b from-[#D4A853]/20 to-transparent rounded-2xl blur-sm" />
 
                 <div className="relative bg-[#0a0a0a]/90 backdrop-blur-xl border border-[#D4A853]/20 rounded-2xl p-8 shadow-2xl">
-                    <div className="mb-6 space-y-4">
-                        <label className="flex items-start space-x-3 cursor-pointer group">
-                            <div className="relative flex items-start mt-0.5">
-                                <input
-                                    type="checkbox"
-                                    className="peer appearance-none w-5 h-5 border border-white/20 rounded bg-white/5 checked:bg-[#D4A853]/20 checked:border-[#D4A853] transition-all cursor-pointer"
-                                    checked={acceptedPrivacy}
-                                    onChange={e => setAcceptedPrivacy(e.target.checked)}
-                                />
-                                <div className="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 pointer-events-none text-[#D4A853]">
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
-                            </div>
-                            <span className="text-white/70 text-xs font-mono group-hover:text-white/90 transition-colors">I accept the Privacy & Safety Policy</span>
-                        </label>
-                        <label className="flex items-start space-x-3 cursor-pointer group">
-                            <div className="relative flex items-start mt-0.5">
-                                <input
-                                    type="checkbox"
-                                    className="peer appearance-none w-5 h-5 border border-white/20 rounded bg-white/5 checked:bg-[#D4A853]/20 checked:border-[#D4A853] transition-all cursor-pointer"
-                                    checked={acceptedTerms}
-                                    onChange={e => setAcceptedTerms(e.target.checked)}
-                                />
-                                <div className="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 pointer-events-none text-[#D4A853]">
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
-                            </div>
-                            <span className="text-white/70 text-xs font-mono group-hover:text-white/90 transition-colors">I agree to the Terms of Service & Conditions</span>
-                        </label>
-                    </div>
-
                     <div className="text-center mb-8">
                         <h2 className="text-2xl font-bold text-white tracking-widest uppercase">Command</h2>
                         <p className="text-[#D4A853]/60 text-xs font-mono mt-2">SYSTEM READY // AWAITING AUTH</p>
@@ -124,6 +89,41 @@ export function ActLogin() {
                                 ERROR: {err}
                             </div>
                         )}
+
+                        <div className="space-y-4">
+                            <label className="flex items-start space-x-3 cursor-pointer group">
+                                <div className="relative flex items-start mt-0.5">
+                                    <input
+                                        type="checkbox"
+                                        className="peer appearance-none w-5 h-5 border border-white/20 rounded bg-white/5 checked:bg-[#D4A853]/20 checked:border-[#D4A853] transition-all cursor-pointer"
+                                        checked={acceptedPrivacy}
+                                        onChange={e => setAcceptedPrivacy(e.target.checked)}
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 pointer-events-none text-[#D4A853]">
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <span className="text-white/70 text-xs font-mono group-hover:text-white/90 transition-colors">I accept the Privacy & Safety Policy</span>
+                            </label>
+                            <label className="flex items-start space-x-3 cursor-pointer group">
+                                <div className="relative flex items-start mt-0.5">
+                                    <input
+                                        type="checkbox"
+                                        className="peer appearance-none w-5 h-5 border border-white/20 rounded bg-white/5 checked:bg-[#D4A853]/20 checked:border-[#D4A853] transition-all cursor-pointer"
+                                        checked={acceptedTerms}
+                                        onChange={e => setAcceptedTerms(e.target.checked)}
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100 pointer-events-none text-[#D4A853]">
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <span className="text-white/70 text-xs font-mono group-hover:text-white/90 transition-colors">I agree to the Terms of Service & Conditions</span>
+                            </label>
+                        </div>
 
                         <button
                             disabled={loading || success || !acceptedPrivacy || !acceptedTerms}

@@ -260,6 +260,9 @@ class TaxAdviceOut(BaseModel):
 
     visualization_data: Optional[Dict[str, Any]] = None
 
+    moat_time_travel: Optional[Dict[str, Any]] = None
+    moat_tax_harvest: Optional[Dict[str, Any]] = None
+
 
 # ----------------------------
 # NEW: Decision Intelligence API Models
@@ -812,7 +815,7 @@ def compute_time_travel_insight(
             "wait_days": wait_days,
             "current_rate_label": f"Short-Term ({st_rate*100:.0f}%)",
             "optimized_rate_label": f"Long-Term ({lt_rate*100:.0f}%)",
-            "message": f"If you wait {wait_days} days, this becomes Long-Term Capital Gains and you save {savings:,.2f} in taxes.",
+            "message": f"If you wait {wait_days} days, this becomes Long-Term Capital Gains and you save ${savings:,.0f} in taxes.",
         }
     except Exception as e:
         print(f"MOAT TIME-TRAVEL WARNING: {e}")
@@ -915,9 +918,10 @@ def compute_tax_loss_harvest(
             "net_tax_after_offset": net_tax_after_offset,
             "savings": max(0, savings),
             "message": (
-                f"This trade generates a {est_gain:,.2f} capital gain. "
-                f"Selling {top_candidates[0]['symbol']} (currently at {top_candidates[0]['return_pct']:.1f}%) "
-                f"would offset {top_candidates[0]['offset_amount']:,.2f}, saving ~{savings:,.2f} in tax."
+                f"You have a capital gain of ${est_gain:,.0f}. "
+                f"If you sell your {top_candidates[0]['symbol']} shares right now (which are down {abs(top_candidates[0]['return_pct']):.1f}%), "
+                f"you can use those losses to cancel out ${top_candidates[0]['offset_amount']:,.0f} of your gain. "
+                f"This simple move will save you about ${savings:,.0f} in taxes!"
             ),
         }
     except Exception as e:
@@ -1388,6 +1392,25 @@ def decision_simulate(request: Request, body: DecisionSimulationIn):
             decision, portfolio, comparison,
             jurisdiction=body.tax_jurisdiction or "US"
         )
+
+        # 8.6 Save decision so Tax Advisor can see it
+        try:
+            import secrets, time
+            dstore = read_decisions()
+            if "items" not in dstore:
+                dstore["items"] = []
+            decision_record = {
+                "id": f"dec_{secrets.token_hex(6)}",
+                "decision_text": body.decision_text,
+                "tax_country": body.tax_jurisdiction or "US",
+                "portfolio_id": portfolio["id"],
+                "portfolio_value": float(portfolio.get("total_value", 0)),
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            dstore["items"].insert(0, decision_record)
+            write_decisions(dstore)
+        except Exception as e:
+            print(f"Failed to save simulation decision: {e}")
 
         # 9. Construct Response (Universal Output Blueprint)
         return {
@@ -3241,6 +3264,31 @@ def tax_advice(request: Request, body: TaxAdviceIn):
     if strategy and hasattr(strategy, "generate_signals"):
         signals = strategy.generate_signals(t_profile, t_ctx, transactions, impact)
         
+    # Add moat analyses
+    # We need a mock body for compute_time_travel_insight
+    class MockBody:
+        tax_holding_period = t_ctx.holding_period.value
+        horizon_days = 30
+        tax_jurisdiction = iso_jurisdiction
+
+    tax_analysis = impact.dict() if hasattr(impact, "dict") else vars(impact)
+    # Ensure estimated_gain_usd is set for moat functions
+    # TaxImpact might have it as a property or attribute
+    if 'estimated_gain_usd' not in tax_analysis:
+        tax_analysis['estimated_gain_usd'] = impact.estimated_gain_usd
+
+    # We need a mock decision object with actions
+    class MockDecision:
+        def __init__(self, acts):
+            self.actions = acts
+
+    moat_time_travel = compute_time_travel_insight(
+        MockDecision(actions), tax_analysis, MockBody(), portfolio
+    )
+    moat_tax_harvest = compute_tax_loss_harvest(
+        MockDecision(actions), portfolio, tax_analysis
+    )
+
     return TaxAdviceOut(
         ok=True,
         portfolio_id=str(portfolio.get("id")),
@@ -3253,6 +3301,8 @@ def tax_advice(request: Request, body: TaxAdviceIn):
         decision_id=decision_id,
         decision_text=decision_text,
         signals=signals,
+        moat_time_travel=moat_time_travel,
+        moat_tax_harvest=moat_tax_harvest,
     )
 
 

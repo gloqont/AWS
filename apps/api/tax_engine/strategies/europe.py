@@ -152,19 +152,19 @@ class FranceTaxStrategy(AbstractTaxStrategy):
 
         # 1. Linear Tax Compression
         signals.append(RiskSignal(
-            title="Linear Tax Compression",
+            title="Flat Tax Impact",
             severity=RiskSignalSeverity.MEDIUM,
             expected_return_drag_pct=-round(FRANCE_FLAT_TAX * 100, 2),
             tail_loss_delta_pct=round(FRANCE_FLAT_TAX * 100 * 0.1, 2),
-            mechanism="Flat tax (PFU 30%) makes after-tax distribution a linear shift"
+            mechanism="France applies a flat 30% tax (PFU) on your gains."
         ))
 
         # 2. High Social Charge Drag
         signals.append(RiskSignal(
-            title="High Social Charge Drag",
+            title="High Social Security Contributions",
             severity=RiskSignalSeverity.MEDIUM,
             expected_return_drag_pct=-round(FRANCE_SOCIAL_CHARGES_RATE * 100, 2),
-            mechanism="17.2% Social Charges magnification on tail risk"
+            mechanism="A large portion of your tax (17.2%) goes to social charges (CSG/CRDS)."
         ))
 
         return signals
@@ -262,32 +262,32 @@ class UKTaxStrategy(AbstractTaxStrategy):
             if gain < UK_CGT_ALLOWANCE:
                 buffer_left = UK_CGT_ALLOWANCE - gain
                 signals.append(RiskSignal(
-                    title="Allowance Utilization",
+                    title="Tax-Free Allowance Available",
                     severity=RiskSignalSeverity.LOW,
                     available_offset_usd=round(buffer_left, 2),
                     risk_dampening_potential_pct=100.0,
-                    mechanism="Zero-tax buffer available (£3,000) reduces realization risk"
+                    mechanism="You still have room in your £3,000 tax-free Capital Gains limit."
                 ))
 
             # 2. Income Band Sensitivity
             cg_rate = UK_CGT_RATES.get(profile.income_tier, 0.20)
             if cg_rate > 0.10:
                 signals.append(RiskSignal(
-                    title="Income Band Sensitivity",
+                    title="Higher Capital Gains Bracket",
                     severity=RiskSignalSeverity.MEDIUM,
                     expected_return_drag_pct=-round(cg_rate * 100, 2),
-                    mechanism="Higher income band increases CGT rate to 20%"
+                    mechanism="Your income pushes your Capital Gains Tax rate from 10% up to 20%."
                 ))
 
         # 3. Stamp Duty Friction
         sdrt_layers = [l for l in tax_impact.layers if l.name == "SDRT"]
         if sdrt_layers:
             signals.append(RiskSignal(
-                title="Stamp Duty Friction",
+                title="Stamp Duty Reserve Tax (SDRT)",
                 severity=RiskSignalSeverity.LOW,
                 expected_return_drag_pct=-round(UK_SDRT_RATE * 100, 2),
                 volatility_impact_pct=0.1,
-                mechanism="Execution drag on equities (0.5% SDRT)"
+                mechanism="You lose 0.5% automatically just for buying UK shares."
             ))
 
         return signals
@@ -398,18 +398,17 @@ class NetherlandsTaxStrategy(AbstractTaxStrategy):
         
         # 1. Wealth Floor Risk
         signals.append(RiskSignal(
-            title="Wealth Floor Risk",
+            title="Annual Wealth Tax (Box 3)",
             severity=RiskSignalSeverity.HIGH,
             tail_loss_delta_pct=round(eff_rate * 100, 2), # increases baseline drawdown
-            mechanism="Annual tax regardless of realization increases baseline drawdown floor"
+            mechanism="You are taxed every year on your total investments in the Netherlands, even if you never sell."
         ))
 
-        # 2. Capital Efficiency Drag
         signals.append(RiskSignal(
-            title="Capital Efficiency Drag",
+            title="High Assumed Returns Tax",
             severity=RiskSignalSeverity.MEDIUM,
             expected_return_drag_pct=-round(eff_rate * 100, 2),
-            mechanism="High asset value implies higher annual tax load (Box 3)"
+            mechanism="The tax office assumes you make 6.17% on investments and taxes that imaginary gain at 36%."
         ))
 
         return signals

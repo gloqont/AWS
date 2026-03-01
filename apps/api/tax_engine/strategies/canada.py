@@ -160,20 +160,20 @@ class CanadaTaxStrategy(AbstractTaxStrategy):
         expected_drag = round(tax_impact.effective_tax_rate, 2)
 
         signals.append(RiskSignal(
-            title="Inclusion Cushion Signal",
+            title="50% Taxable Gain Benefit",
             severity=RiskSignalSeverity.LOW,
             expected_return_drag_pct=-expected_drag,
             tail_loss_delta_pct=round(expected_drag * 0.5, 2), # 50% inclusion softens the blow
-            mechanism="50% Inclusion Rate dampens after-tax volatility"
+            mechanism="Only half (50%) of your capital gains are subject to tax in Canada."
         ))
 
         # 2. Provincial Amplification
         if marginal_rate > 0.45:
             signals.append(RiskSignal(
-                title="Provincial Amplification",
+                title="High Provincial Tax Rate",
                 severity=RiskSignalSeverity.MEDIUM,
                 expected_return_drag_pct=-round(marginal_rate * INCLUSION_RATE * 100, 2),
-                mechanism=f"High provincial marginal rate ({province})"
+                mechanism=f"You are in a high tax bracket for your province ({province})."
             ))
 
         return signals

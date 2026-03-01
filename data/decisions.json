@@ -1,6 +1,22 @@
 {
   "items": [
     {
+      "id": "dec_137abfdaa510",
+      "decision_text": "Buy AAPL $400",
+      "tax_country": "US",
+      "portfolio_id": "prt_1b8ea3332ccc",
+      "portfolio_value": 4605.4998779296875,
+      "created_at": "2026-03-01T05:29:12Z"
+    },
+    {
+      "id": "dec_3f5c3912ecbb",
+      "decision_text": "Buy AAPL $340",
+      "tax_country": "US",
+      "portfolio_id": "prt_1b8ea3332ccc",
+      "portfolio_value": 4605.4998779296875,
+      "created_at": "2026-03-01T05:12:33Z"
+    },
+    {
       "id": "dec_d91adb2c118d",
       "decision_text": "buy AAPL 5%",
       "tax_country": "India",

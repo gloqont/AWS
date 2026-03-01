@@ -268,11 +268,11 @@ class USATaxStrategy(AbstractTaxStrategy):
                 sev = RiskSignalSeverity.LOW
 
             signals.append(RiskSignal(
-                title="Short-Term Realization Risk",
+                title="Extra Short-Term Tax Penalty",
                 severity=sev,
                 tail_loss_delta_pct=tail_delta,
                 expected_return_drag_pct=-expected_drag,
-                mechanism="Ordinary income taxation layer"
+                mechanism=f"Because you haven't held this for a year, you pay higher ordinary income rates."
             ))
 
         # 2. State Amplification Signal
@@ -283,21 +283,20 @@ class USATaxStrategy(AbstractTaxStrategy):
             # High state tax amplifies drag
             vol_impact = round(rate * 100 * 0.1, 2) # heuristic volatility impact penalty
             signals.append(RiskSignal(
-                title="State Amplification Signal",
+                title="High State Tax Impact",
                 severity=RiskSignalSeverity.MEDIUM if rate < 0.10 else RiskSignalSeverity.HIGH,
                 expected_return_drag_pct=-round(rate * 100, 2),
                 volatility_impact_pct=vol_impact,
-                mechanism=f"State taxation layer ({state_code})"
+                mechanism=f"Your state ({state_code}) charges an additional {rate*100:.1f}% tax on this gain."
             ))
 
         # 3. NIIT Threshold Exposure
         if profile.income_tier in NIIT_APPLIES_TO:
             signals.append(RiskSignal(
-                title="NIIT Threshold Exposure",
+                title="High-Income Surcharge (NIIT)",
                 severity=RiskSignalSeverity.HIGH,
                 expected_return_drag_pct=-round(NIIT_RATE * 100, 2),
-                mechanism="Nonlinear jump in effective rate (NIIT +3.8%)"
+                mechanism="Your income bracket triggers a mandatory 3.8% Medicare investment tax."
             ))
             
         return signals
-

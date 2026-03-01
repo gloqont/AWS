@@ -29,6 +29,8 @@ type RiskResponse = {
   decision_id?: string | null;
   decision_text?: string | null;
   signals: RiskSignal[];
+  moat_time_travel?: any;
+  moat_tax_harvest?: any;
 };
 
 type PortfolioCurrent = {
@@ -56,6 +58,19 @@ function fmtMoney(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function getCurrencySymbol(currency: string) {
+  switch (currency?.toUpperCase()) {
+    case "EUR": return "€";
+    case "GBP": return "£";
+    case "INR": return "₹";
+    case "JPY": return "¥";
+    case "CAD": return "C$";
+    case "AUD": return "A$";
+    case "USD":
+    default: return "$";
+  }
+}
+
 export default function TaxAdvisorPage() {
   const searchParams = useSearchParams();
   const [portfolio, setPortfolio] = useState<PortfolioCurrent["portfolio"]>(null);
@@ -70,13 +85,14 @@ export default function TaxAdvisorPage() {
   // Start the tax advisor tutorial when the page loads
   useEffect(() => {
     const tutorialParam = searchParams.get("tutorial");
-    const hasCompletedTutorial = localStorage.getItem("hasCompletedTutorial_v2");
+    const hasShownTaxAdvisorTutorial = localStorage.getItem("has_shown_tax_advisor_tutorial");
 
     if (
       (tutorialParam === "tax-advisor" && !isTutorialActive) ||
-      (!tutorialParam && !isTutorialActive && !hasCompletedTutorial)
+      (!tutorialParam && !isTutorialActive && !hasShownTaxAdvisorTutorial)
     ) {
       const timer = setTimeout(() => {
+        localStorage.setItem("has_shown_tax_advisor_tutorial", "true");
         startTutorial(TAX_ADVISOR_TUTORIAL);
       }, 500); // Small delay to ensure DOM is ready
 
@@ -162,7 +178,7 @@ export default function TaxAdvisorPage() {
               <>
                 <div className="mt-2 text-sm text-white">{portfolio.name}</div>
                 <div className="mt-1 text-xs text-white/50">
-                  Value: ${fmtMoney(portfolio.total_value)} {portfolio.base_currency}
+                  Value: {getCurrencySymbol(portfolio.base_currency)}{fmtMoney(portfolio.total_value)}
                 </div>
                 <div className="mt-1 text-xs text-white/50">Risk budget: {portfolio.risk_budget}</div>
               </>
@@ -281,6 +297,88 @@ export default function TaxAdvisorPage() {
                   ))}
                 </div>
               )}
+
+              {/* ── MOAT: Time-Travel Trade Optimizer ── */}
+              {advice.moat_time_travel?.applicable && (() => {
+                const tt = advice.moat_time_travel;
+                return (
+                  <div className="mt-6">
+                    <div className="text-lg font-semibold mb-4 text-[#D4A853]">Future Taxes Optimizer</div>
+                    <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-cyan-500/20 rounded-xl p-5">
+                      <div className="text-sm text-cyan-300 font-medium mb-4">{tt.message}</div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Today ({tt.current_rate_label})</div>
+                          <div className="text-xl font-mono text-red-400 font-bold">{getCurrencySymbol(advice.base_currency)}{fmtMoney(tt.current_tax)}</div>
+                        </div>
+                        <div className="text-center flex flex-col items-center justify-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Wait</div>
+                          <div className="text-xl font-mono text-cyan-400 font-bold">{tt.wait_days} days</div>
+                          <div className="text-[10px] text-white/30 mt-1">→ {tt.optimized_rate_label}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Optimized Tax</div>
+                          <div className="text-xl font-mono text-emerald-400 font-bold">{getCurrencySymbol(advice.base_currency)}{fmtMoney(tt.optimized_tax)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 text-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-2.5 px-4">
+                        <span className="text-xs text-white/50 uppercase tracking-wider mr-2">You Save</span>
+                        <span className="text-lg font-mono font-bold text-emerald-400">{getCurrencySymbol(advice.base_currency)}{fmtMoney(tt.savings)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── MOAT: Tax-Loss Harvest Offset ── */}
+              {advice.moat_tax_harvest?.applicable && (() => {
+                const th = advice.moat_tax_harvest;
+                return (
+                  <div className="mt-6">
+                    <div className="text-lg font-semibold mb-4 text-[#D4A853]">Tax-Loss Harvest Offset</div>
+                    <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-xl p-5">
+                      <div className="text-sm text-amber-300 font-medium mb-4">{th.message}</div>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Capital Gain</div>
+                          <div className="text-xl font-mono text-red-400 font-bold">{getCurrencySymbol(advice.base_currency)}{fmtMoney(th.trade_gain)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Available Offset</div>
+                          <div className="text-xl font-mono text-emerald-400 font-bold">-{getCurrencySymbol(advice.base_currency)}{fmtMoney(th.total_offset)}</div>
+                        </div>
+                      </div>
+                      <div className="bg-black/30 rounded-lg overflow-hidden border border-white/5">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-white/40 uppercase tracking-wider text-[10px] border-b border-white/5">
+                              <th className="px-3 py-2 text-left">Asset</th>
+                              <th className="px-3 py-2 text-right">Return</th>
+                              <th className="px-3 py-2 text-right">Est. Loss</th>
+                              <th className="px-3 py-2 text-right">Offset</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {th.offset_candidates.map((c: any, i: number) => (
+                              <tr key={i} className="border-b border-white/5">
+                                <td className="px-3 py-2 text-white font-mono font-bold">{c.symbol}</td>
+                                <td className="px-3 py-2 text-right text-red-400 font-mono">{c.return_pct.toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-right text-white/70 font-mono">{getCurrencySymbol(advice.base_currency)}{fmtMoney(c.estimated_loss)}</td>
+                                <td className="px-3 py-2 text-right text-emerald-400 font-mono">{getCurrencySymbol(advice.base_currency)}{fmtMoney(c.offset_amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-2.5 px-4">
+                        <span className="text-xs text-white/50 uppercase tracking-wider">Tax Savings</span>
+                        <span className="text-lg font-mono font-bold text-emerald-400">{getCurrencySymbol(advice.base_currency)}{fmtMoney(th.savings)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
             </>
           )}
         </div>

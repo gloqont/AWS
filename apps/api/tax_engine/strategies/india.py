@@ -270,11 +270,11 @@ class IndiaTaxStrategy(AbstractTaxStrategy):
             expected_drag = round(tax_impact.effective_tax_rate, 2)
             
             signals.append(RiskSignal(
-                title="Short-Term Turnover Drag",
+                title="Higher Short-Term Tax Rate",
                 severity=RiskSignalSeverity.MEDIUM if expected_drag > 0.15 else RiskSignalSeverity.LOW,
                 tail_loss_delta_pct=tail_delta,
                 expected_return_drag_pct=-expected_drag,
-                mechanism="15% STCG vs 10% LTCG spread compression"
+                mechanism="Selling under 1 year triggers 15% tax instead of 10% Long-Term rate."
             ))
 
         # 2. Execution Friction Density
@@ -283,10 +283,10 @@ class IndiaTaxStrategy(AbstractTaxStrategy):
             total_friction_rate = sum(l.rate for l in stt_stamp_layers) / 100.0
             if total_friction_rate > 0.001:  # > 0.1% friction
                 signals.append(RiskSignal(
-                    title="Execution Friction Density",
+                    title="High Transaction Costs (STT)",
                     severity=RiskSignalSeverity.MEDIUM if total_friction_rate > 0.002 else RiskSignalSeverity.LOW,
                     volatility_impact_pct=round(total_friction_rate * 100 * 0.5, 2),  # heuristic Vol drag
-                    mechanism="Cumulative STT + Stamp Duty drag"
+                    mechanism="You are paying Securities Transaction Tax (STT) and Stamp Duty on this trade."
                 ))
 
         # 3. LTCG Threshold Utilization
@@ -298,11 +298,11 @@ class IndiaTaxStrategy(AbstractTaxStrategy):
                 if gain < exemption_usd:
                     buffer_left = exemption_usd - gain
                     signals.append(RiskSignal(
-                        title="LTCG Threshold Utilization",
+                        title="Tax-Free Allowance Available",
                         severity=RiskSignalSeverity.LOW,
                         available_offset_usd=round(buffer_left, 2),
                         risk_dampening_potential_pct=10.0,
-                        mechanism="₹1L tax-free statutory buffer"
+                        mechanism="You still have room in your ₹1 Lakh tax-free limit for this year."
                     ))
 
         # 4. Slab Exposure (Debt / F&O)
@@ -310,10 +310,10 @@ class IndiaTaxStrategy(AbstractTaxStrategy):
         if has_slab_exposure and gain > 0:
             slab_rate = INDIA_SLAB_RATES.get(profile.income_tier, 0.30)
             signals.append(RiskSignal(
-                title="Slab Amplification Exposure",
+                title="High Tax Slab Penalty",
                 severity=RiskSignalSeverity.HIGH if slab_rate >= 0.30 else RiskSignalSeverity.MEDIUM,
                 tail_loss_delta_pct=round(slab_rate * 100 * 0.1, 2),
-                mechanism="Income slab amplifies tail loss under profit scenarios (No Indexation)"
+                mechanism=f"These gains are taxed at your full income bracket rate ({slab_rate * 100:.0f}%) with no indexation benefits."
             ))
 
         return signals
