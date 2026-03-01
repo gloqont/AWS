@@ -4,13 +4,18 @@ import time
 import secrets
 import math
 import asyncio
+from decimal import Decimal
+from functools import lru_cache
 from typing import List, Literal, Optional, Dict, Any
 from urllib.parse import urlencode, quote_plus
 
+import boto3
 import numpy as np
 import pandas as pd
+import jwt
+from boto3.dynamodb.conditions import Key
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse
@@ -45,9 +50,9 @@ from tax_engine.models import TransactionDetail
 
 load_dotenv()
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
+BOOT_ID = secrets.token_hex(8)
+BOOT_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
@@ -75,41 +80,7 @@ DECISIONS_PATH = os.path.join(DATA_DIR, "decisions.json")  # ✅
 TAX_RULES_PATH = os.path.join(DATA_DIR, "tax_rules.json")  # ✅
 PROFILES_PATH = os.path.join(DATA_DIR, "user_profiles.json")
 
-# ── In-memory price cache for instant refetches ──
-_PRICE_CACHE: Dict[str, Any] = {}  # key -> {"data": ..., "ts": float}
-_PRICE_CACHE_TTL = 300  # 5 minutes
-_SYMBOL_PRICE_CACHE: Dict[str, Dict[str, Any]] = {}  # SYMBOL -> {"price": float, "currency": str, "ts": float, "source": str}
-_SYMBOL_PRICE_CACHE_MAX_STALE = 60 * 60 * 24  # 24h hard cap for stale fallback
-_SYMBOL_PRICE_CACHE_FAST_AGE = 120  # 2 minutes for instant quote refresh
-
-def _get_cached_prices(cache_key: str):
-    entry = _PRICE_CACHE.get(cache_key)
-    if entry and (time.time() - entry["ts"]) < _PRICE_CACHE_TTL:
-        return entry["data"]
-    return None
-
-def _set_cached_prices(cache_key: str, data: Any):
-    _PRICE_CACHE[cache_key] = {"data": data, "ts": time.time()}
-
-
-def _set_symbol_price_cache(symbol: str, price: float, currency: str = "USD", source: str = "twelve_data") -> None:
-    _SYMBOL_PRICE_CACHE[symbol.upper()] = {
-        "price": float(price),
-        "currency": (currency or "USD").upper(),
-        "ts": time.time(),
-        "source": source,
-    }
-
-
-def _get_symbol_price_cache(symbol: str, max_age_seconds: int = _SYMBOL_PRICE_CACHE_MAX_STALE) -> Optional[Dict[str, Any]]:
-    item = _SYMBOL_PRICE_CACHE.get(symbol.upper())
-    if not item:
-        return None
-    if (time.time() - float(item.get("ts", 0))) <= max_age_seconds:
-        return item
-    return None
-
-app = FastAPI(title="GLOQONT API", version="1.4.0")  # bump version
+app = FastAPI(title="Advisor Dashboard API", version="1.4.0")  # bump version
 
 app.add_middleware(
     CORSMiddleware,
@@ -157,11 +128,6 @@ class ValidationOut(BaseModel):
     sum_weights: float
     errors: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
-
-
-class LoginIn(BaseModel):
-    username: str
-    password: str
 
 
 class AnalyzeIn(BaseModel):
@@ -349,6 +315,75 @@ class DecisionIntelligenceOut(BaseModel):
 # ----------------------------
 # Storage helpers
 # ----------------------------
+def using_dynamodb() -> bool:
+    return bool(AWS_REGION and USERS_TABLE and PORTFOLIOS_TABLE and DECISIONS_TABLE)
+
+
+@lru_cache(maxsize=1)
+def ddb_resource():
+    if not AWS_REGION:
+        raise RuntimeError("AWS_REGION is required to use DynamoDB")
+    return boto3.resource("dynamodb", region_name=AWS_REGION)
+
+
+@lru_cache(maxsize=1)
+def cognito_jwk_client(issuer: str):
+    return jwt.PyJWKClient(f"{issuer.rstrip('/')}/.well-known/jwks.json")
+
+
+def _to_ddb(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _to_ddb(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_ddb(v) for v in value]
+    if isinstance(value, float):
+        return Decimal(str(value))
+    return value
+
+
+def _from_ddb(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _from_ddb(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_from_ddb(v) for v in value]
+    if isinstance(value, Decimal):
+        # Preserve whole-number values as ints where possible.
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    return value
+
+
+def _query_user_items(table_name: str, user_id: str) -> List[Dict[str, Any]]:
+    table = ddb_resource().Table(table_name)
+    resp = table.query(KeyConditionExpression=Key("user_id").eq(user_id))
+    return [_from_ddb(item) for item in resp.get("Items", [])]
+
+
+def _replace_user_items(
+    table_name: str,
+    user_id: str,
+    sort_key_name: str,
+    items: List[Dict[str, Any]],
+) -> None:
+    table = ddb_resource().Table(table_name)
+    existing = table.query(KeyConditionExpression=Key("user_id").eq(user_id)).get("Items", [])
+    with table.batch_writer() as batch:
+        for item in existing:
+            sk = item.get(sort_key_name)
+            if sk is None:
+                continue
+            batch.delete_item(Key={"user_id": user_id, sort_key_name: sk})
+        for item in items:
+            sk = item.get("id")
+            if not sk:
+                continue
+            record = dict(item)
+            record["user_id"] = user_id
+            record[sort_key_name] = sk
+            batch.put_item(Item=_to_ddb(record))
+
+
 def ensure_data_file():
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -380,25 +415,51 @@ def ensure_data_file():
             )
 
 
-def read_portfolios():
+def read_portfolios(user_id: str):
+    if using_dynamodb():
+        items = _query_user_items(PORTFOLIOS_TABLE, user_id)
+        normalized: List[Dict[str, Any]] = []
+        for item in items:
+            row = dict(item)
+            row.pop("user_id", None)
+            row.pop("portfolio_id", None)
+            normalized.append(row)
+        normalized.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
+        return {"items": normalized}
     ensure_data_file()
     with open(PORTFOLIOS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def write_portfolios(payload):
+def write_portfolios(user_id: str, payload: Dict[str, Any]):
+    if using_dynamodb():
+        _replace_user_items(PORTFOLIOS_TABLE, user_id, "portfolio_id", payload.get("items", []))
+        return
     ensure_data_file()
     with open(PORTFOLIOS_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
 
-def read_decisions():
+def read_decisions(user_id: str):
+    if using_dynamodb():
+        items = _query_user_items(DECISIONS_TABLE, user_id)
+        normalized: List[Dict[str, Any]] = []
+        for item in items:
+            row = dict(item)
+            row.pop("user_id", None)
+            row.pop("decision_id", None)
+            normalized.append(row)
+        normalized.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
+        return {"items": normalized}
     ensure_data_file()
     with open(DECISIONS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def write_decisions(payload):
+def write_decisions(user_id: str, payload: Dict[str, Any]):
+    if using_dynamodb():
+        _replace_user_items(DECISIONS_TABLE, user_id, "decision_id", payload.get("items", []))
+        return
     ensure_data_file()
     with open(DECISIONS_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -423,6 +484,38 @@ def write_profiles(payload):
     ensure_data_file()
     with open(PROFILES_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+
+
+def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
+    if using_dynamodb():
+        table = ddb_resource().Table(USERS_TABLE)
+        resp = table.get_item(Key={"user_id": user_id})
+        item = _from_ddb(resp.get("Item"))
+        if not item:
+            return None
+        return item.get("profile")
+    store = read_profiles()
+    return store.get("profiles", {}).get(user_id)
+
+
+def save_user_profile(user_id: str, profile: Dict[str, Any]) -> None:
+    if using_dynamodb():
+        table = ddb_resource().Table(USERS_TABLE)
+        table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET #p = :p, #u = :u",
+            ExpressionAttributeNames={"#p": "profile", "#u": "updated_at"},
+            ExpressionAttributeValues={
+                ":p": _to_ddb(profile),
+                ":u": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+        )
+        return
+    store = read_profiles()
+    profiles = store.get("profiles", {}) or {}
+    profiles[user_id] = profile
+    store["profiles"] = profiles
+    write_profiles(store)
 
 
 # ----------------------------
@@ -685,7 +778,7 @@ def portfolio_validate(request: Request, body: PortfolioIn):
 
 @app.post("/api/v1/portfolio/save")
 def portfolio_save(request: Request, body: PortfolioIn):
-    require_admin(request)
+    actor = require_admin(request)
 
     v = validate_portfolio(body)
     if not v.ok:
@@ -694,7 +787,7 @@ def portfolio_save(request: Request, body: PortfolioIn):
             detail={"errors": v.errors, "warnings": v.warnings, "sum_weights": v.sum_weights},
         )
 
-    store = read_portfolios()
+    store = read_portfolios(actor["sub"])
     item = {
         "id": f"prt_{secrets.token_hex(6)}",
         "name": body.name,
@@ -705,14 +798,14 @@ def portfolio_save(request: Request, body: PortfolioIn):
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     store["items"].insert(0, item)
-    write_portfolios(store)
+    write_portfolios(actor["sub"], store)
     return {"ok": True, "portfolio": item}
 
 
 @app.get("/api/v1/portfolio/current")
 def portfolio_current(request: Request):
-    require_admin(request)
-    store = read_portfolios()
+    actor = require_admin(request)
+    store = read_portfolios(actor["sub"])
     items = store.get("items", [])
     if not items:
         return {"ok": True, "portfolio": None}
@@ -756,31 +849,26 @@ def tax_rules(request: Request, country: str = "United States"):
 # ----------------------------
 @app.get("/api/v1/user/profile")
 def user_profile_get(request: Request):
-    require_admin(request)
-    # in this simple app we store a single admin profile
-    store = read_profiles()
-    return {"ok": True, "profile": store.get("profiles", {}).get("admin")}
+    actor = require_admin(request)
+    return {"ok": True, "profile": get_user_profile(actor["sub"])}
 
 
 @app.post("/api/v1/user/profile")
 def user_profile_save(request: Request, body: dict):
-    require_admin(request)
-    store = read_profiles()
-    profiles = store.get("profiles", {}) or {}
+    actor = require_admin(request)
 
     answers = body.get("answers") or {}
     skipped = bool(body.get("skipped", False))
     level = classify_level(answers) if not skipped else None
 
-    profiles["admin"] = {
+    profile = {
         "answers": answers,
         "skipped": skipped,
         "level": level,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    store["profiles"] = profiles
-    write_profiles(store)
-    return {"ok": True, "profile": profiles["admin"]}
+    save_user_profile(actor["sub"], profile)
+    return {"ok": True, "profile": profile}
 
 
 # ----------------------------
@@ -1252,10 +1340,10 @@ def consequence_engine(target: str, magnitude: int, portfolio: Dict[str, Any], t
 @app.post("/api/v1/scenario/run", response_model=ScenarioOut)
 def scenario_run(request: Request, body: ScenarioIn):
     import re  # Import re at the beginning to avoid UnboundLocalError
-    require_admin(request)
+    actor = require_admin(request)
 
     # Load portfolio
-    pstore = read_portfolios()
+    pstore = read_portfolios(actor["sub"])
     pitems = pstore.get("items", [])
     if not pitems:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -2651,8 +2739,8 @@ async def market_stream(request: Request, tickers: str):
 
 @app.get("/api/v1/decisions/last")
 def decisions_last(request: Request):
-    require_admin(request)
-    store = read_decisions()
+    actor = require_admin(request)
+    store = read_decisions(actor["sub"])
     items = store.get("items", [])
     if not items:
         return {"ok": True, "decision": None}
@@ -2661,9 +2749,9 @@ def decisions_last(request: Request):
 
 @app.post("/api/v1/decisions/analyze", response_model=DecisionOut)
 def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
-    require_admin(request)
+    actor = require_admin(request)
 
-    pstore = read_portfolios()
+    pstore = read_portfolios(actor["sub"])
     items = pstore.get("items", [])
     if not items:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -2697,9 +2785,9 @@ def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
-    dstore = read_decisions()
+    dstore = read_decisions(actor["sub"])
     dstore["items"].insert(0, decision)
-    write_decisions(dstore)
+    write_decisions(actor["sub"], dstore)
 
     return decision
 
@@ -2707,7 +2795,7 @@ def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
 # NEW: Canonical Decision Analysis Endpoint
 @app.post("/api/v1/decisions/canonical", response_model=CanonicalDecisionOut)
 def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
-    require_admin(request)
+    actor = require_admin(request)
 
     # Validate input using guardrails
     validation_result = INPUT_VALIDATOR.validate_decision_input(body.decision_text)
@@ -2716,7 +2804,7 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
         for violation in validation_result.violations:
             print(f"Guardrail violation detected: {violation}")
 
-    pstore = read_portfolios()
+    pstore = read_portfolios(actor["sub"])
     items = pstore.get("items", [])
     if not items:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -2724,8 +2812,7 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
     portfolio = items[0]
 
     # Get user profile to determine appropriate user type based on questionnaire
-    profile_store = read_profiles()
-    user_profile = profile_store.get("profiles", {}).get("admin")
+    user_profile = get_user_profile(actor["sub"])
 
     # Determine user type: use provided type or derive from questionnaire
     if body.user_type == UserType.RETAIL and user_profile and user_profile.get("level"):  # Only auto-assign if default was provided
@@ -2815,9 +2902,9 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
         "created_at": real_life_decision.calculated_at,
     }
 
-    dstore = read_decisions()
+    dstore = read_decisions(actor["sub"])
     dstore["items"].insert(0, decision_record)
-    write_decisions(dstore)
+    write_decisions(actor["sub"], dstore)
 
     # Return the canonical decision output
     result = CanonicalDecisionOut(
@@ -2960,16 +3047,16 @@ def _build_tax_advice_items(
 
 @app.post("/api/v1/tax/advice", response_model=TaxAdviceOut)
 def tax_advice(request: Request, body: TaxAdviceIn):
-    require_admin(request)
+    actor = require_admin(request)
 
-    pstore = read_portfolios()
+    pstore = read_portfolios(actor["sub"])
     pitems = pstore.get("items", [])
     if not pitems:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
     portfolio = pitems[0]
 
     # last decision is optional
-    dstore = read_decisions()
+    dstore = read_decisions(actor["sub"])
     ditems = dstore.get("items", [])
     decision = ditems[0] if ditems else None
 
@@ -3743,7 +3830,11 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
         ppy = periods_per_year_from_interval(body.interval)
         m = portfolio_metrics(rets, weights, periods_per_year=ppy)
 
-        if not _is_finite(m["annualized_vol"]) or not _is_finite(m["max_drawdown"]):
+        if (
+            not _is_finite(m["annualized_vol"])
+            or not _is_finite(m["max_drawdown"])
+            or not _is_finite(m["annualized_return"])
+        ):
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -3773,7 +3864,10 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
             "tickers": tlist,
             "lookback_days": body.lookback_days,
             "interval": body.interval,
+            "projection_horizon_years": body.projection_horizon_years,
             "annualized_vol": float(m["annualized_vol"]),
+            "projected_total_return": float((1.0 + m["annualized_return"]) ** body.projection_horizon_years - 1.0),
+            "projected_volatility": float(m["annualized_vol"] * math.sqrt(body.projection_horizon_years)),
             "max_drawdown": float(m["max_drawdown"]),
             "corr": {
                 "rows": tlist,

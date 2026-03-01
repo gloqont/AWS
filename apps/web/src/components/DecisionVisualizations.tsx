@@ -69,7 +69,7 @@ function fmtPct(n: number) {
 // Decision Delta Waterfall Visualization
 const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data }) => {
   if (!data || !data.before_composition || !data.after_composition) {
-    return <div className='text-sm text-white/60'>No data available for waterfall chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for waterfall chart</div>;
   }
 
   // Prepare data for visualization
@@ -81,8 +81,8 @@ const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data })
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Portfolio Composition Changes</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Portfolio Composition Changes</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows portfolio composition before decision, the incremental change from this decision, and the final composition after the decision
       </div>
 
@@ -99,7 +99,7 @@ const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data })
             {beforeWeights.map((pos, idx) => (
               <div
                 key={idx}
-                className='h-full flex items-center justify-center px-1 border-r border-white/10 last:border-r-0'
+                className='h-full flex items-center justify-center px-1 border-r border-border last:border-r-0'
                 style={{ width: `${pos.weight}%` }}
                 title={`${pos.symbol}: ${pos.weight}%`}
               >
@@ -122,7 +122,7 @@ const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data })
             {afterWeights.map((pos, idx) => (
               <div
                 key={idx}
-                className='h-full flex items-center justify-center px-1 border-r border-white/10 last:border-r-0'
+                className='h-full flex items-center justify-center px-1 border-r border-border last:border-r-0'
                 style={{ width: `${pos.weight}%` }}
                 title={`${pos.symbol}: ${pos.weight}%`}
               >
@@ -145,7 +145,7 @@ const DecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data })
 // Downside Risk Fan Chart Visualization
 const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) => {
   if (!data || !data.time_horizons || !data.base_case) {
-    return <div className='text-sm text-white/60'>No data available for risk fan chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for risk fan chart</div>;
   }
 
   // Find min and max values for scaling
@@ -156,17 +156,17 @@ const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) =>
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Downside Risk Evolution Over Time</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Downside Risk Evolution Over Time</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how downside risk evolves over different time horizons under various stress scenarios
       </div>
 
-      <div className='relative h-48 w-full bg-gray-900/30 rounded-lg border border-white/10 p-2'>
+      <div className='relative h-48 w-full bg-muted/70 rounded-lg border border-border p-2'>
         {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
           <div
             key={idx}
-            className='absolute w-full border-t border-white/10 text-xs text-white/50'
+            className='absolute w-full border-t border-border text-xs text-muted-foreground'
             style={{ top: `${ratio * 100}%` }}
           >
             {fmtPct(minValue + (1 - ratio) * range)}
@@ -174,7 +174,7 @@ const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) =>
         ))}
 
         {/* Time labels */}
-        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-white/70'>
+        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-muted-foreground'>
           {data.time_horizons.map((time, idx) => (
             <div key={idx}>{time}d</div>
           ))}
@@ -253,7 +253,7 @@ const DownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) =>
 // Concentration Shift Chart Visualization
 const ConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }> = ({ data }) => {
   if (!data || !data.before || !data.after) {
-    return <div className='text-sm text-white/60'>No data available for concentration chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for concentration chart</div>;
   }
 
   // Take top 5 positions for both before and after
@@ -262,8 +262,8 @@ const ConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }> = ({ d
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Concentration Shift Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Concentration Shift Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows top holdings before and after the decision to visualize concentration changes
       </div>
 
@@ -317,7 +317,7 @@ const ConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }> = ({ d
 // Regime Sensitivity Map Visualization
 const RegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data }) => {
   if (!data || !data.regime_axes || !data.sensitivity_scores_before) {
-    return <div className='text-sm text-white/60'>No data available for regime sensitivity map</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for regime sensitivity map</div>;
   }
 
   // Convert sensitivity keys to match the axes
@@ -333,8 +333,8 @@ const RegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Regime Sensitivity Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Regime Sensitivity Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how sensitive your portfolio is to different market regimes before and after the decision
       </div>
 
@@ -362,7 +362,7 @@ const RegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data 
               const change = afterScore - beforeScore;
 
               return (
-                <tr key={idx} className='border-t border-white/10'>
+                <tr key={idx} className='border-t border-border'>
                   <td className='p-2'>{regime}</td>
                   <td className='p-2 text-center'>
                     <div className='flex items-center justify-center'>
@@ -382,7 +382,7 @@ const RegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data 
                       <span className='ml-2'>{(afterScore * 100).toFixed(0)}%</span>
                     </div>
                   </td>
-                  <td className={`p-2 text-center font-medium ${change > 0 ? 'text-red-400' : change < 0 ? 'text-green-400' : 'text-white'}`}>
+                  <td className={`p-2 text-center font-medium ${change > 0 ? 'text-red-400' : change < 0 ? 'text-green-400' : 'text-foreground'}`}>
                     {fmtPct(change * 100)}
                   </td>
                 </tr>
@@ -398,7 +398,7 @@ const RegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data 
 // Irreversibility Horizon Chart Visualization
 const IrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }> = ({ data }) => {
   if (!data || !data.holding_periods || !data.irreversible_losses) {
-    return <div className='text-sm text-white/60'>No data available for irreversibility chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for irreversibility chart</div>;
   }
 
   // Find min and max values for scaling
@@ -408,12 +408,12 @@ const IrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Irreversibility Risk Over Time</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Irreversibility Risk Over Time</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how irreversible loss changes over different holding periods, with recovery zone highlighted
       </div>
 
-      <div className='relative h-48 w-full bg-gray-900/30 rounded-lg border border-white/10 p-2'>
+      <div className='relative h-48 w-full bg-muted/70 rounded-lg border border-border p-2'>
         {/* Recovery zone */}
         {data.recovery_zone_threshold !== undefined && (
           <div
@@ -431,7 +431,7 @@ const IrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }
         {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
           <div
             key={idx}
-            className='absolute w-full border-t border-white/10 text-xs text-white/50'
+            className='absolute w-full border-t border-border text-xs text-muted-foreground'
             style={{ top: `${ratio * 100}%` }}
           >
             {fmtPct(minValue + (1 - ratio) * range)}
@@ -439,7 +439,7 @@ const IrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }
         ))}
 
         {/* Time labels */}
-        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-white/70'>
+        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-muted-foreground'>
           {data.holding_periods.map((period, idx) => (
             <div key={idx}>{period}m</div>
           ))}
@@ -509,7 +509,7 @@ const IrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }
 // Time-to-Damage Gauge Visualization
 const TimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ data }) => {
   if (!data || !data.segments) {
-    return <div className='text-sm text-white/60'>No data available for time-to-damage gauge</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for time-to-damage gauge</div>;
   }
 
   // Calculate the angle for the needle based on the current value
@@ -518,8 +518,8 @@ const TimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ data }) 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Time-to-Damage Assessment</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Time-to-Damage Assessment</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows the estimated time until material loss could occur based on current risk factors
       </div>
 
@@ -575,7 +575,7 @@ const TimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ data }) 
           {/* Value display */}
           <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center'>
             <div className='text-lg font-bold'>{data.current_value || 0}</div>
-            <div className='text-xs text-white/70'>days</div>
+            <div className='text-xs text-muted-foreground'>days</div>
           </div>
         </div>
 
@@ -605,7 +605,7 @@ const TimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ data }) 
 // Risk-Return Trade-off Plane Visualization
 const RiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data }) => {
   if (!data || !data.before_point || !data.after_point) {
-    return <div className='text-sm text-white/60'>No data available for risk-return plane</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for risk-return plane</div>;
   }
 
   // Calculate scaling factors
@@ -620,28 +620,28 @@ const RiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data }) => {
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Risk-Return Trade-off Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Risk-Return Trade-off Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows the risk-return profile before and after the rebalancing decision
       </div>
 
-      <div className='relative h-64 w-full bg-gray-900/30 rounded-lg border border-white/10 p-2'>
+      <div className='relative h-64 w-full bg-muted/70 rounded-lg border border-border p-2'>
         {/* Grid lines */}
         <div className='absolute inset-0 grid grid-cols-5 grid-rows-5'>
           {[...Array(5)].map((_, i) => (
             <React.Fragment key={i}>
-              <div className='border-r border-white/10'></div>
-              <div className='border-t border-white/10'></div>
+              <div className='border-r border-border'></div>
+              <div className='border-t border-border'></div>
             </React.Fragment>
           ))}
         </div>
 
         {/* Axis labels */}
-        <div className='absolute bottom-2 left-0 right-0 text-center text-xs text-white/70'>
+        <div className='absolute bottom-2 left-0 right-0 text-center text-xs text-muted-foreground'>
           Portfolio Risk (Volatility)
         </div>
         <div
-          className='absolute top-0 left-2 text-center text-xs text-white/70 transform -rotate-90 origin-center'
+          className='absolute top-0 left-2 text-center text-xs text-muted-foreground transform -rotate-90 origin-center'
           style={{ writingMode: 'vertical-rl' }}
         >
           Expected Return
@@ -733,7 +733,7 @@ const RiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data }) => {
 // Exposure Heatmap Visualization
 const ExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
   if (!data || !data.sector_labels || !data.region_labels || !data.heatmap_matrix) {
-    return <div className='text-sm text-white/60'>No data available for exposure heatmap</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for exposure heatmap</div>;
   }
 
   // Calculate max value for color scaling
@@ -741,8 +741,8 @@ const ExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Exposure Heatmap (Sector vs Region)</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Exposure Heatmap (Sector vs Region)</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows portfolio exposure across different sectors and regions before and after the rebalancing decision
       </div>
 
@@ -776,7 +776,7 @@ const ExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
                 return (
                   <div
                     key={colIdx}
-                    className='flex-1 h-12 flex items-center justify-center text-xs border border-white/10'
+                    className='flex-1 h-12 flex items-center justify-center text-xs border border-border'
                     style={{
                       backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
                       minWidth: '60px'
@@ -794,9 +794,9 @@ const ExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
 
       {/* Color scale */}
       <div className='mt-3'>
-        <div className='text-xs text-white/70 mb-1'>Intensity Scale</div>
+        <div className='text-xs text-muted-foreground mb-1'>Intensity Scale</div>
         <div className='h-4 w-full bg-gradient-to-r from-green-700 to-green-300 rounded'></div>
-        <div className='flex justify-between text-xs text-white/70'>
+        <div className='flex justify-between text-xs text-muted-foreground'>
           <span>Low</span>
           <span>High</span>
         </div>
@@ -808,7 +808,7 @@ const ExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
 // Recovery Path Comparison Visualization
 const RecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ data }) => {
   if (!data || !data.time_points || !data.historical_recovery_paths || !data.current_portfolio_recovery) {
-    return <div className='text-sm text-white/60'>No data available for recovery path comparison</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for recovery path comparison</div>;
   }
 
   // Find max value for scaling
@@ -818,17 +818,17 @@ const RecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ data }) 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Recovery Path Comparison</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Recovery Path Comparison</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows expected recovery paths based on historical analogs vs current portfolio after rebalancing
       </div>
 
-      <div className='relative h-48 w-full bg-gray-900/30 rounded-lg border border-white/10 p-2'>
+      <div className='relative h-48 w-full bg-muted/70 rounded-lg border border-border p-2'>
         {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
           <div
             key={idx}
-            className='absolute w-full border-t border-white/10 text-xs text-white/50'
+            className='absolute w-full border-t border-border text-xs text-muted-foreground'
             style={{ top: `${ratio * 100}%` }}
           >
             {(maxValue * (1 - ratio)).toFixed(0)}%
@@ -836,7 +836,7 @@ const RecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ data }) 
         ))}
 
         {/* Time labels */}
-        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-white/70'>
+        <div className='absolute bottom-0 left-0 right-0 flex justify-between text-xs text-muted-foreground'>
           {data.time_points.map((time, idx) => (
             <div key={idx}>{time}d</div>
           ))}
@@ -924,7 +924,7 @@ export const DecisionVisualizations: React.FC<{
   decisionType: string
 }> = ({ visualizationData, decisionType }) => {
   if (!visualizationData) {
-    return <div className='text-sm text-white/60'>No visualization data available</div>;
+    return <div className='text-sm text-muted-foreground'>No visualization data available</div>;
   }
 
   return (

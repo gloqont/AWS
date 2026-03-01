@@ -1,0 +1,15 @@
+[Unit]
+Description=GLOQONT Next.js service
+After=network.target gloqont-api.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/gloqont/apps/web
+EnvironmentFile=/opt/gloqont/apps/web/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

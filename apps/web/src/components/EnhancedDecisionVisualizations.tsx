@@ -93,7 +93,7 @@ function fmtPct(n: number) {
 // Enhanced Decision Delta Waterfall Visualization
 const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({ data }) => {
   if (!data || !data.before_composition || !data.after_composition) {
-    return <div className='text-sm text-white/60'>No data available for waterfall chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for waterfall chart</div>;
   }
 
   // Prepare data for visualization
@@ -110,8 +110,8 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Portfolio Composition Changes</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Portfolio Composition Changes</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows portfolio composition before decision, the incremental change from this decision, and the final composition after the decision
       </div>
 
@@ -121,11 +121,11 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis dataKey="name" stroke="#aaa" />
-            <YAxis stroke="#aaa" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" />
+            <XAxis dataKey="name" stroke="rgb(var(--muted-fg))" />
+            <YAxis stroke="rgb(var(--muted-fg))" />
             <Tooltip 
-              contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
+              contentStyle={{ backgroundColor: "rgb(var(--card))", borderColor: "rgb(var(--border))", color: "rgb(var(--fg))" }}
               formatter={(value) => [`${value}%`, 'Weight']}
             />
             <Legend />
@@ -147,17 +147,17 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
 
       {/* Detailed breakdown */}
       <div className='mt-4 grid grid-cols-3 gap-4'>
-        <div className='bg-gray-800/50 p-3 rounded-lg'>
+        <div className='bg-muted/70 p-3 rounded-lg border border-border'>
           <h4 className='text-sm font-medium mb-2'>Before Decision</h4>
           {beforeWeights.map((pos, idx) => (
-            <div key={idx} className='flex justify-between text-xs py-1 border-b border-gray-700'>
+            <div key={idx} className='flex justify-between text-xs py-1 border-b border-border/60'>
               <span>{pos.symbol}</span>
               <span>{fmtPct(pos.weight)}</span>
             </div>
           ))}
         </div>
         
-        <div className='bg-gray-800/50 p-3 rounded-lg'>
+        <div className='bg-muted/70 p-3 rounded-lg border border-border'>
           <h4 className='text-sm font-medium mb-2'>Δ Change</h4>
           <div className='flex justify-between text-xs py-1'>
             <span>{data.delta_bar.symbol}</span>
@@ -167,10 +167,10 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
           </div>
         </div>
         
-        <div className='bg-gray-800/50 p-3 rounded-lg'>
+        <div className='bg-muted/70 p-3 rounded-lg border border-border'>
           <h4 className='text-sm font-medium mb-2'>After Decision</h4>
           {afterWeights.map((pos, idx) => (
-            <div key={idx} className='flex justify-between text-xs py-1 border-b border-gray-700'>
+            <div key={idx} className='flex justify-between text-xs py-1 border-b border-border/60'>
               <span>{pos.symbol}</span>
               <span>{fmtPct(pos.weight)}</span>
             </div>
@@ -184,7 +184,7 @@ const EnhancedDecisionDeltaWaterfall: React.FC<{ data: DecisionDeltaData }> = ({
 // Enhanced Downside Risk Fan Chart Visualization
 const EnhancedDownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ data }) => {
   if (!data || !data.time_horizons || !data.base_case) {
-    return <div className='text-sm text-white/60'>No data available for risk fan chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for risk fan chart</div>;
   }
 
   // Prepare data for the chart
@@ -197,8 +197,8 @@ const EnhancedDownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ da
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Downside Risk Evolution Over Time</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Downside Risk Evolution Over Time</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how downside risk evolves over different time horizons under various stress scenarios
       </div>
 
@@ -261,7 +261,7 @@ const EnhancedDownsideRiskFanChart: React.FC<{ data: RiskFanChartData }> = ({ da
 // Enhanced Concentration Shift Chart Visualization
 const EnhancedConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }> = ({ data }) => {
   if (!data || !data.before || !data.after) {
-    return <div className='text-sm text-white/60'>No data available for concentration chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for concentration chart</div>;
   }
 
   // Take top 5 positions for both before and after
@@ -277,8 +277,8 @@ const EnhancedConcentrationShiftChart: React.FC<{ data: ConcentrationShiftData }
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Concentration Shift Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Concentration Shift Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows top holdings before and after the decision to visualize concentration changes
       </div>
 
@@ -325,7 +325,7 @@ function keyToRegime(key: string): string {
 // Enhanced Regime Sensitivity Map Visualization
 const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = ({ data }) => {
   if (!data || !data.regime_axes || !data.sensitivity_scores_before) {
-    return <div className='text-sm text-white/60'>No data available for regime sensitivity map</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for regime sensitivity map</div>;
   }
 
   // Prepare data for the chart - use key mapping to properly access sensitivity scores
@@ -344,8 +344,8 @@ const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Regime Sensitivity Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Regime Sensitivity Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how sensitive your portfolio is to different market regimes before and after the decision
       </div>
 
@@ -383,7 +383,7 @@ const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = 
       <div className='mt-4 overflow-x-auto'>
         <table className='w-full text-sm'>
           <thead>
-            <tr className='border-b border-white/20'>
+            <tr className='border-b border-border'>
               <th className='text-left p-2'>Regime</th>
               <th className='text-center p-2'>Before</th>
               <th className='text-center p-2'>After</th>
@@ -392,11 +392,11 @@ const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = 
           </thead>
           <tbody>
             {chartData.map((item, idx) => (
-              <tr key={idx} className='border-b border-white/10'>
+              <tr key={idx} className='border-b border-border'>
                 <td className='p-2'>{item.regime}</td>
                 <td className='p-2 text-center'>{item.before.toFixed(3)}</td>
                 <td className='p-2 text-center'>{item.after.toFixed(3)}</td>
-                <td className={`p-2 text-center font-medium ${item.change > 0 ? 'text-red-400' : item.change < 0 ? 'text-green-400' : 'text-white'}`}>
+                <td className={`p-2 text-center font-medium ${item.change > 0 ? 'text-red-400' : item.change < 0 ? 'text-green-400' : 'text-foreground'}`}>
                   {item.change >= 0 ? '+' : ''}{item.change.toFixed(3)}
                 </td>
               </tr>
@@ -411,7 +411,7 @@ const EnhancedRegimeSensitivityMap: React.FC<{ data: RegimeSensitivityData }> = 
 // Enhanced Irreversibility Horizon Chart Visualization
 const EnhancedIrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHorizonData }> = ({ data }) => {
   if (!data || !data.holding_periods || !data.irreversible_losses) {
-    return <div className='text-sm text-white/60'>No data available for irreversibility chart</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for irreversibility chart</div>;
   }
 
   // Prepare data for the chart
@@ -423,8 +423,8 @@ const EnhancedIrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHoriz
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Irreversibility Risk Over Time</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Irreversibility Risk Over Time</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows how irreversible loss changes over different holding periods, with recovery zone highlighted
       </div>
 
@@ -475,7 +475,7 @@ const EnhancedIrreversibilityHorizonChart: React.FC<{ data: IrreversibilityHoriz
 // Enhanced Time-to-Damage Gauge Visualization
 const EnhancedTimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ data }) => {
   if (!data || !data.segments) {
-    return <div className='text-sm text-white/60'>No data available for time-to-damage gauge</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for time-to-damage gauge</div>;
   }
 
   // Calculate the percentage for the current value
@@ -489,8 +489,8 @@ const EnhancedTimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Time-to-Damage Assessment</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Time-to-Damage Assessment</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows the estimated time until material loss could occur based on current risk factors
       </div>
 
@@ -555,7 +555,7 @@ const EnhancedTimeToDamageGauge: React.FC<{ data: TimeToDamageGaugeData }> = ({ 
 // Enhanced Risk-Return Trade-off Plane Visualization
 const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data }) => {
   if (!data || !data.before_point || !data.after_point) {
-    return <div className='text-sm text-white/60'>No data available for risk-return plane</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for risk-return plane</div>;
   }
 
   // Prepare data for the chart
@@ -576,8 +576,8 @@ const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Risk-Return Trade-off Analysis</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Risk-Return Trade-off Analysis</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows the risk-return profile before and after the rebalancing decision
       </div>
 
@@ -627,7 +627,7 @@ const EnhancedRiskReturnPlane: React.FC<{ data: RiskReturnPlaneData }> = ({ data
 // Enhanced Exposure Heatmap Visualization
 const EnhancedExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data }) => {
   if (!data || !data.sector_labels || !data.region_labels || !data.heatmap_matrix) {
-    return <div className='text-sm text-white/60'>No data available for exposure heatmap</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for exposure heatmap</div>;
   }
 
   // Prepare data for the chart
@@ -645,8 +645,8 @@ const EnhancedExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Exposure Heatmap (Sector vs Region)</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Exposure Heatmap (Sector vs Region)</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows portfolio exposure across different sectors and regions before and after the rebalancing decision
       </div>
 
@@ -693,7 +693,7 @@ const EnhancedExposureHeatmap: React.FC<{ data: ExposureHeatmapData }> = ({ data
 // Enhanced Recovery Path Comparison Visualization
 const EnhancedRecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ data }) => {
   if (!data || !data.time_points || !data.historical_recovery_paths || !data.current_portfolio_recovery) {
-    return <div className='text-sm text-white/60'>No data available for recovery path comparison</div>;
+    return <div className='text-sm text-muted-foreground'>No data available for recovery path comparison</div>;
   }
 
   // Prepare data for the chart
@@ -705,8 +705,8 @@ const EnhancedRecoveryPathComparison: React.FC<{ data: RecoveryPathData }> = ({ 
 
   return (
     <div className='w-full'>
-      <h3 className='font-medium text-amber-200 mb-2'>Recovery Path Comparison</h3>
-      <div className='text-xs text-white/60 mb-3'>
+      <h3 className='font-medium text-foreground mb-2'>Recovery Path Comparison</h3>
+      <div className='text-xs text-muted-foreground mb-3'>
         Shows expected recovery paths based on historical analogs vs current portfolio after rebalancing
       </div>
 
@@ -761,42 +761,42 @@ export const EnhancedDecisionVisualizations: React.FC<{
   decisionType: string
 }> = ({ visualizationData, decisionType }) => {
   if (!visualizationData) {
-    return <div className='text-sm text-white/60'>No visualization data available</div>;
+    return <div className='text-sm text-muted-foreground'>No visualization data available</div>;
   }
 
   return (
     <div className='mt-6 space-y-6'>
       {/* V1. Enhanced Decision Delta Waterfall */}
       {visualizationData.decision_delta && (
-        <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+        <div className='rounded-xl border border-border bg-muted p-4'>
           <EnhancedDecisionDeltaWaterfall data={visualizationData.decision_delta} />
         </div>
       )}
 
       {/* V2. Enhanced Downside Risk Fan Chart */}
       {visualizationData.risk_scenarios?.fan_chart_data && (
-        <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+        <div className='rounded-xl border border-border bg-muted p-4'>
           <EnhancedDownsideRiskFanChart data={visualizationData.risk_scenarios.fan_chart_data} />
         </div>
       )}
 
       {/* V3. Enhanced Concentration Shift Chart */}
       {visualizationData.concentration_data && (
-        <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+        <div className='rounded-xl border border-border bg-muted p-4'>
           <EnhancedConcentrationShiftChart data={visualizationData.concentration_data} />
         </div>
       )}
 
       {/* V4. Enhanced Regime Sensitivity Map */}
       {visualizationData.regime_sensitivity && (
-        <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+        <div className='rounded-xl border border-border bg-muted p-4'>
           <EnhancedRegimeSensitivityMap data={visualizationData.regime_sensitivity} />
         </div>
       )}
 
       {/* V5. Enhanced Irreversibility Horizon Chart */}
       {visualizationData.irreversibility_data?.horizon_chart_data && (
-        <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+        <div className='rounded-xl border border-border bg-muted p-4'>
           <EnhancedIrreversibilityHorizonChart data={visualizationData.irreversibility_data.horizon_chart_data} />
         </div>
       )}
@@ -806,8 +806,8 @@ export const EnhancedDecisionVisualizations: React.FC<{
         <>
           {/* V6. Position Risk Profile - keeping original since it's informational */}
           {visualizationData.position_risk_profile && (
-            <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
-              <h3 className='font-medium text-amber-200 mb-2'>Position Risk Profile</h3>
+            <div className='rounded-xl border border-border bg-muted p-4'>
+              <h3 className='font-medium text-foreground mb-2'>Position Risk Profile</h3>
               <div className='text-sm'>
                 <div><strong>Asset:</strong> {visualizationData.position_risk_profile.asset}</div>
                 <div><strong>Current Weight:</strong> {fmtPct(visualizationData.position_risk_profile.current_weight)}</div>
@@ -826,7 +826,7 @@ export const EnhancedDecisionVisualizations: React.FC<{
 
           {/* V7. Enhanced Time-to-Damage Gauge */}
           {visualizationData.time_to_damage_gauge?.gauge_data && (
-            <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+            <div className='rounded-xl border border-border bg-muted p-4'>
               <EnhancedTimeToDamageGauge data={visualizationData.time_to_damage_gauge.gauge_data} />
             </div>
           )}
@@ -838,21 +838,21 @@ export const EnhancedDecisionVisualizations: React.FC<{
         <>
           {/* V8. Enhanced Risk–Return Trade-off Plane */}
           {visualizationData.risk_return_plane && (
-            <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+            <div className='rounded-xl border border-border bg-muted p-4'>
               <EnhancedRiskReturnPlane data={visualizationData.risk_return_plane} />
             </div>
           )}
 
           {/* V9. Enhanced Exposure Heatmap */}
           {visualizationData.exposure_heatmap && (
-            <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+            <div className='rounded-xl border border-border bg-muted p-4'>
               <EnhancedExposureHeatmap data={visualizationData.exposure_heatmap} />
             </div>
           )}
 
           {/* V10. Enhanced Recovery Path Comparison */}
           {visualizationData.recovery_path_comparison && (
-            <div className='rounded-xl border border-white/10 bg-black/20 p-4'>
+            <div className='rounded-xl border border-border bg-muted p-4'>
               <EnhancedRecoveryPathComparison data={visualizationData.recovery_path_comparison} />
             </div>
           )}

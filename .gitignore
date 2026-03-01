@@ -35,6 +35,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+data/cache/
+data/portfolios.json
+data/decisions.json
+apps/api/.venv/
+apps/web/public/node_modules/
 
 # Runtime cache/data (local-only)
 data/cache/

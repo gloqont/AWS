@@ -1,7 +1,13 @@
-// Use same-origin paths so Next.js dev server can proxy `/api` to the backend.
 const API_BASE = "";
 
 export async function apiFetch(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",

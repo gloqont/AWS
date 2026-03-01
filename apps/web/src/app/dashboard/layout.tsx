@@ -138,7 +138,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-background text-foreground">
       {/* Sidebar */}
       <aside
         className={[
@@ -200,6 +200,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     id={item.id}
                     href={item.href}
                     className={[
+                      "flex items-center rounded-xl border transition-colors",
+                      collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                       "flex items-center rounded-xl border transition-colors",
                       collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
                       active
@@ -358,12 +360,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
 
-          <div className="px-4 py-4 border-t border-white/10 text-xs text-white/50">
-            <div className={collapsed ? "hidden" : "leading-relaxed"}>
-              v1 • admin-only
-              <br />
-              Protected routes
-            </div>
+          <div className="px-4 py-4 border-t border-border text-xs text-muted-foreground">
+            {collapsed ? (
+              <div className="flex justify-center">
+                <ThemeToggle compact />
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <div className="leading-relaxed">
+                  v1
+                  <br />
+                  Cognito-ready
+                </div>
+                <ThemeToggle />
+              </div>
+            )}
           </div>
         </div>
       </aside>

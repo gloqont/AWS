@@ -1,22 +1,31 @@
-# Advisor Dashboard (Admin-only MVP)
+# GLOQONT Advisor Dashboard
 
-This is a standalone project (not connected to any other dashboard).
+Monorepo with:
+- `apps/api`: FastAPI backend
+- `apps/web`: Next.js frontend
 
-## Features
-- Admin-only login (single account configured via env vars)
-- Portfolio Optimizer / Constructor
-  - Add tickers + weights
-  - Enforces weights sum to 100%
-  - Risk budget enum: LOW / MEDIUM / HIGH
-  - Backend returns a "risk object" contract for future quant services
+## Production Readiness Changes Included
+- Optional Cognito JWT auth (`AUTH_REQUIRED=true`) with per-user data scoping.
+- Optional DynamoDB persistence for users/portfolios/decisions when AWS env vars are configured.
+- Runtime data directory is configurable (`DATA_DIR`) for local/legacy file persistence.
+- EC2 deployment assets added under `deploy/` (systemd + nginx + scripts).
 
-## Requirements
-- Node.js 18+ (recommended 20+)
-- Python 3.10+ (recommended 3.11)
+## Environment Setup
 
-## Setup
+### API env
+Copy `apps/api/.env.example` to `apps/api/.env` and set:
+- `CORS_ORIGINS` to your domain(s)
+- `DATA_DIR=/var/lib/gloqont/data` on EC2 (recommended)
 
-### 1) Backend (FastAPI)
+### Web env
+Copy `apps/web/.env.example` to `apps/web/.env` and set:
+- `API_PROXY_TARGET=http://127.0.0.1:8000` on EC2
+- `NEXT_PUBLIC_AUTH_BYPASS=true` to temporarily disable login/signup and open dashboard access
+- `NEXT_PUBLIC_COGNITO_DOMAIN` and `NEXT_PUBLIC_COGNITO_CLIENT_ID` for login
+
+## Local Development
+
+### Backend
 ```bash
 # edit .env and set ADMIN_PASSWORD + SESSION_SECRET
 cd apps/api
@@ -24,14 +33,12 @@ cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-API docs: http://localhost:8000/docs
 
-### 2) Frontend (Next.js)
+### Frontend
 ```bash
 cd apps/web
-cp .env.local.example .env.local
 npm install
 npm run dev
 ```
