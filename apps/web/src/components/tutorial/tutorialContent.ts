@@ -99,12 +99,6 @@ export const SCENARIO_SIMULATION_TUTORIAL: TutorialStep[] = [
     elementId: 'scenario-portfolio-summary',
   },
   {
-    id: 'decision-type-selector',
-    title: 'Decision Type',
-    description: 'Choose between Trade Decision (for buying stocks not in your portfolio) or Portfolio Rebalancing (for adjusting existing holdings).',
-    elementId: 'decision-type-selector',
-  },
-  {
     id: 'decision-input',
     title: 'Decision Input',
     description: 'Describe the decision you want to simulate. For example, "Buy NVDA 5%" or "Sell AAPL 10% and buy GOOGL".',
@@ -112,8 +106,8 @@ export const SCENARIO_SIMULATION_TUTORIAL: TutorialStep[] = [
   },
   {
     id: 'tax-country-and-actions',
-    title: 'Tax Country and Actions',
-    description: 'Select your tax country for the simulation and click "Run Scenario" to execute the analysis.',
+    title: 'Tax Country',
+    description: 'Select your tax country for the simulation to get accurate tax impact assessments for your decision.',
     elementId: 'tax-country-and-actions',
   },
   {

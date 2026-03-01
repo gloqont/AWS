@@ -2,14 +2,44 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTutorial } from './TutorialContext';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 interface TutorialOverlayProps {
   children: React.ReactNode;
 }
 
+type TutorialOverlayState = {
+  currentStepData: {
+    title: string;
+    description: string;
+    elementId: string;
+  };
+  element: HTMLElement | null;
+  rect: DOMRect | null;
+};
+
 const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
-  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial } = useTutorial();
+  const { isTutorialActive, currentStep, steps, nextStep, prevStep, endTutorial, completeTutorial } = useTutorial();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [currentPage, setCurrentPage] = useState('');
+
+  // Determine current page from pathname
+  useEffect(() => {
+    if (pathname.includes('/portfolio-optimizer')) {
+      setCurrentPage('portfolio-optimizer');
+    } else if (pathname.includes('/scenario-simulation')) {
+      setCurrentPage('scenario-simulation');
+    } else if (pathname.includes('/tax-advisor')) {
+      setCurrentPage('tax-advisor');
+    } else if (pathname.includes('/tax-impact')) {
+      setCurrentPage('tax-impact');
+    } else {
+      setCurrentPage('');
+    }
+  }, [pathname]);
 
   // Calculate the position and dimensions of the highlighted element
   useEffect(() => {
@@ -32,7 +62,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       overlay.style.pointerEvents = 'none';
 
       // Add a slight margin to make the highlight more visible
-      overlay.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.12)';
+      overlay.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.2)';
       overlay.style.borderRadius = '12px';
       overlay.style.transform = 'scale(1.05)'; // Zoom effect
       overlay.style.transition = 'all 0.3s ease';
@@ -40,7 +70,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
   }, [isTutorialActive, currentStep, steps]);
 
   // State to hold the current step data and rect for consistent hook usage
-  const [tutorialState, setTutorialState] = useState<{currentStepData: any, element: HTMLElement | null, rect: DOMRect | null} | null>(null);
+  const [tutorialState, setTutorialState] = useState<TutorialOverlayState | null>(null);
 
   // Update tutorial state when tutorial is active
   useEffect(() => {
@@ -119,25 +149,45 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
     return <>{children}</>;
   }
 
+  const clearTutorialParam = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('tutorial')) return;
+    params.delete('tutorial');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  };
+
+  const handleCancel = () => {
+    clearTutorialParam();
+    endTutorial();
+  };
+
+  const handleFinish = () => {
+    clearTutorialParam();
+    completeTutorial();
+  };
+
   // Render the tutorial overlay when active
   return (
     <>
       {children}
+      {/* Overlay to dim the rest of the screen */}
       <div
-        className="fixed inset-0 z-50"
+        className="fixed inset-0 bg-black/10 z-50 pointer-events-auto"
         style={{ zIndex: 9997 }}
-        onClick={endTutorial}
+        onClick={handleCancel}
       />
 
       {/* Highlight box around the target element with zoom effect */}
       <div
         ref={overlayRef}
-        className="fixed border-4 border-yellow-400 rounded-xl z-50 animate-pulse shadow-lg shadow-yellow-400/50"
+        className="fixed border-2 border-[#D4A853] rounded-xl z-50 animate-pulse shadow-lg shadow-[#D4A853]/30"
         style={{
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.12)',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.2)',
           borderRadius: '12px',
           transition: 'all 0.3s ease',
           transform: 'scale(1.05)', // Slight zoom effect
+          animationDuration: '3s',
           zIndex: 9998
         }}
       />
@@ -145,7 +195,7 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
       {/* Tooltip with tutorial content - positioned to stay within viewport and avoid overlapping the highlighted element */}
       <div
         id="tutorial-tooltip"
-        className="fixed bg-card text-card-foreground p-6 rounded-2xl shadow-2xl z-50 max-w-xs sm:max-w-sm md:max-w-md pointer-events-auto border border-border"
+        className="fixed bg-[#0a0a0a]/95 text-white p-6 rounded-2xl shadow-2xl z-50 max-w-xs sm:max-w-sm md:max-w-md pointer-events-auto border border-[#D4A853]/35"
         style={{
           left: '50%',
           top: '50%',
@@ -156,31 +206,19 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
           overflowY: 'auto',
           backdropFilter: 'blur(10px)'
         }}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4">
-          <div className="flex items-start justify-between gap-4">
-            <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
-              <span className="bg-muted text-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm">
-                {currentStep + 1}
-              </span>
-              {tutorialState?.currentStepData.title}
-            </h3>
-            <button
-              type="button"
-              onClick={endTutorial}
-              className="text-muted-foreground hover:text-foreground text-lg leading-none"
-              aria-label="Close tutorial"
-              title="Close"
-            >
-              ×
-            </button>
-          </div>
+          <h3 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
+            <span className="bg-[#D4A853]/15 text-[#D4A853] border border-[#D4A853]/40 rounded-full w-6 h-6 flex items-center justify-center text-sm">
+              {currentStep + 1}
+            </span>
+            {tutorialState?.currentStepData.title}
+          </h3>
         </div>
-        <p className="text-foreground/80 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
+        <p className="text-white/75 mb-5 text-base leading-relaxed">{tutorialState?.currentStepData.description}</p>
 
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0 pt-3 border-t border-border">
-          <div className="text-sm text-muted-foreground font-medium">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0 pt-3 border-t border-white/10">
+          <div className="text-sm text-[#D4A853]/75 font-medium">
             Step {currentStep + 1} of {steps.length}
           </div>
 
@@ -188,15 +226,15 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ children }) => {
             {currentStep > 0 && (
               <button
                 onClick={prevStep}
-                className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-all text-sm font-medium shadow-sm"
+                className="px-4 py-2 border border-white/15 bg-white/5 text-white rounded-lg hover:bg-white/10 hover:border-[#D4A853]/30 transition-all text-sm font-medium"
               >
                 ← Prev
               </button>
             )}
 
             <button
-              onClick={currentStep < steps.length - 1 ? nextStep : endTutorial}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all text-sm font-medium shadow-md"
+              onClick={currentStep < steps.length - 1 ? nextStep : handleFinish}
+              className="px-4 py-2 bg-[#D4A853] text-black rounded-lg hover:bg-[#c89c45] transition-all text-sm font-semibold shadow-md shadow-[#D4A853]/25"
             >
               {currentStep < steps.length - 1 ? 'Next →' : 'Finish'}
             </button>

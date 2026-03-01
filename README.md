@@ -27,8 +27,10 @@ Copy `apps/web/.env.example` to `apps/web/.env` and set:
 
 ### Backend
 ```bash
+# edit .env and set ADMIN_PASSWORD + SESSION_SECRET
 cd apps/api
-python3.13 -m venv .venv
+cp .env.example .env
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -40,47 +42,79 @@ cd apps/web
 npm install
 npm run dev
 ```
+Open: http://localhost:3000
 
-Open `http://localhost:3000/dashboard/portfolio-optimizer`.
+## Login
+- Go to http://localhost:3000/login
+- Use ADMIN_USERNAME / ADMIN_PASSWORD from `apps/api/.env`
 
-## EC2 Deployment (Ubuntu 24.04)
+## Deploy To EC2 (t3.micro)
 
-Assumes app lives at `/opt/gloqont`.
+This repo now includes deployment assets:
+- `scripts/bootstrap_ec2.sh` (first-time server setup)
+- `scripts/deploy_ec2.sh` (pull/build/restart)
+- `deploy/systemd/advisor-api.service`
+- `deploy/systemd/advisor-web.service`
+- `deploy/nginx/advisor-dashboard.conf`
 
-1. Copy project to the instance and install base packages:
+### 1) Push your branch to GitHub
 ```bash
-cd /opt/gloqont
-./deploy/ec2/bootstrap.sh
+git add .
+git commit -m "prepare ec2 deployment"
+git push origin <branch>
 ```
 
-2. Create env files:
+### 2) SSH into EC2 and clone repo
+```bash
+ssh -i <your-key>.pem ubuntu@<ec2-public-ip>
+git clone <your-repo-url> /opt/gloqont
+cd /opt/gloqont
+```
+
+### 3) Bootstrap server (one time)
+```bash
+bash scripts/bootstrap_ec2.sh
+```
+
+### 4) Create production env files
 ```bash
 cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
+cp apps/web/.env.local.example apps/web/.env.local
 ```
 
-3. Deploy services:
+Set real values in `apps/api/.env`:
+- `ADMIN_PASSWORD` (strong value)
+- `SESSION_SECRET` (long random value)
+- `CORS_ORIGINS=https://gloqont.com,https://www.gloqont.com`
+- `SESSION_COOKIE_SECURE=true`
+
+### 5) Deploy app
 ```bash
-APP_ROOT=/opt/gloqont ./deploy/ec2/deploy.sh
+DEPLOY_BRANCH=<branch> APP_DIR=/opt/gloqont bash scripts/deploy_ec2.sh
 ```
 
-4. Verify:
+### 6) Verify services
 ```bash
-systemctl status gloqont-api
-systemctl status gloqont-web
-systemctl status nginx
+sudo systemctl status gloqont-api gloqont-web nginx
 curl -I http://127.0.0.1:8000/docs
-curl -I http://127.0.0.1
+curl -I http://127.0.0.1:3000
 ```
 
-## Push to New GitHub Repo
-
+### 7) Optional: HTTPS
+After DNS points to EC2, install TLS:
 ```bash
-git remote remove origin
-git remote add origin https://github.com/gloqont/AWS.git
-git add .
-git commit -m "Prepare app for AWS EC2 deployment"
-git push -u origin main
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d gloqont.com -d www.gloqont.com
 ```
 
-If your branch is not `main`, replace `main` with your current branch.
+## t3.micro Notes
+- Keep only one API worker (default in `uvicorn` command).
+- Use `npm ci` and build on-server only when needed.
+- For low-memory instances, add swap if builds fail:
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```

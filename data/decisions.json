@@ -1,17 +1,30 @@
 {
   "items": [
     {
-      "id": "dec_e83f03064740",
+      "id": "dec_d91adb2c118d",
       "decision_text": "buy AAPL 5%",
-      "tax_country": "United States",
-      "portfolio_id": "prt_09460a74eae1",
-      "portfolio_value": 4746.250152587891,
+      "tax_country": "India",
+      "portfolio_id": "prt_c28b13e16563",
+      "portfolio_value": 3069.36,
       "expected_before_tax_pct": 0.8,
       "worst_case_pct": -4.800000000000001,
       "best_case_pct": 5.6000000000000005,
       "confidence": "MEDIUM",
       "notes": [],
-      "created_at": "2026-02-01T18:31:05Z"
+      "created_at": "2026-02-14T16:12:15Z"
+    },
+    {
+      "id": "dec_b42635a0bd0a",
+      "decision_text": "buy AAPL 5%",
+      "tax_country": "United States",
+      "portfolio_id": "prt_03de4767056f",
+      "portfolio_value": 4972.550048828125,
+      "expected_before_tax_pct": 0.8,
+      "worst_case_pct": -4.800000000000001,
+      "best_case_pct": 5.6000000000000005,
+      "confidence": "MEDIUM",
+      "notes": [],
+      "created_at": "2026-01-29T07:03:11Z"
     },
     {
       "id": "dec_f994f40b9742",

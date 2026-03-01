@@ -1,0 +1,41 @@
+=== TESTING MACRO PARSER ===
+
+Input: 'What if rates rise 1%?'
+  Decision Type: DecisionType.TRADE
+  Confidence: 0.85
+  Shocks: 1
+    - ScenarioType.RATES_CHANGE RATES 1.0percent
+
+Input: 'Simulate an oil crash of 20%'
+  Decision Type: DecisionType.TRADE
+  Confidence: 0.85
+  Shocks: 1
+    - ScenarioType.COMMODITY_SHOCK OIL -20.0percent
+
+Input: 'Stress test gdp recession'
+  Decision Type: DecisionType.TRADE
+  Confidence: 0.85
+  Shocks: 1
+    - ScenarioType.GDP_GROWTH GDP -2.0percent
+
+Input: 'Buy AAPL 10% after 5 days'
+  Decision Type: DecisionType.TRADE
+  Confidence: 0.95
+  Actions: 1
+    - Direction.BUY AAPL 10.0% (Delay: 5.0 days)
+
+=== TESTING SIMULATION ===
+Running simulation for: 'What if rates rise 1%?'
+DEBUG: Applying Shocks: [MarketShock(shock_type=<ScenarioType.RATES_CHANGE: 'rates_change'>, target='RATES', magnitude=1.0, unit='percent', description='Simulated +1.0% change in RATES')]
+DEBUG: Ticker AAPL (Sector: Unknown) | Old: 100.0 | New: 98.0 | Ratio: 0.98
+DEBUG: Ticker JPM (Sector: Unknown) | Old: 100.0 | New: 100.49999999999999 | Ratio: 1.005
+DEBUG: Ticker XOM (Sector: Unknown) | Old: 100.0 | New: 99.5 | Ratio: 0.995
+DEBUG: Scenario Impact Ratio: 0.992
+  Delta Return: -0.81%
+  Delta Drawdown: -0.00%
+  [PASS] Rates hike correctly negatively impacted portfolio (Tech heavy).
+
+Running simulation for: 'Buy NVDA 10% after 10 days'
+  Delta Return: 0.04%
+  Verdict: DecisionVerdict.NEUTRAL
+  [PASS] Delayed trade simulation ran successfully.

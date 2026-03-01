@@ -183,30 +183,60 @@ class CanonicalAssetResolver:
         # Try to validate with yfinance as a fallback
         try:
             ticker = yf.Ticker(symbol)
-            info = ticker.info
-            if info and 'symbol' in info:
-                # Determine country and sector from yfinance info
-                country = info.get('country', 'USA')  # Default to USA
-                sector = info.get('sector', 'Unknown')
-                
-                # Determine asset type
-                quote_type = info.get('quoteType', 'EQUITY').upper()
-                if quote_type in ['CRYPTOCURRENCY']:
-                    asset_type = 'CRYPTO'
-                elif quote_type in ['ETF', 'MUTUALFUND']:
-                    asset_type = quote_type
-                else:
-                    asset_type = 'STOCK'
+            
+            # optimizations: try fast_info first as it's faster and often sufficient for existence check
+            # ignoring the specific details if we just want to support "everything"
+            try:
+                # fast_info is usually available even if full 'info' is not
+                last_price = ticker.fast_info.get('lastPrice')
+                if last_price is not None:
+                    # It has a price, so it exists.
+                    # Try to get more metadata if possible, but don't fail if we can't
+                    long_name = symbol
+                    country = 'Global'
+                    sector = 'Unknown'
+                    asset_type = 'STOCK' # Default
                     
+                    # Try to get better metadata from info, but don't block on it
+                    try:
+                        info = ticker.info
+                        if info:
+                            long_name = info.get('longName', info.get('shortName', symbol))
+                            country = info.get('country', 'Global')
+                            sector = info.get('sector', 'Unknown')
+                            quote_type = info.get('quoteType', 'EQUITY').upper()
+                            if quote_type in ['CRYPTOCURRENCY']:
+                                asset_type = 'CRYPTO'
+                            elif quote_type in ['ETF', 'MUTUALFUND']:
+                                asset_type = quote_type
+                    except:
+                        pass
+                        
+                    return AssetInfo(
+                        symbol=symbol, # Use input symbol as canonical if we found it
+                        name=long_name,
+                        country=country,
+                        sector=sector,
+                        asset_type=asset_type
+                    )
+            except:
+                # fast_info access failed, fall back to history check
+                pass
+
+            # Fallback: check history if fast_info didn't work (some edge cases)
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                 # It has history, so it exists
                 return AssetInfo(
-                    symbol=info['symbol'],
-                    name=info.get('longName', info.get('shortName', symbol)),
-                    country=country,
-                    sector=sector,
-                    asset_type=asset_type
+                    symbol=symbol,
+                    name=symbol, # Fallback name
+                    country='Global', # Fallback
+                    sector='Unknown', # Fallback
+                    asset_type='STOCK'
                 )
+
         except Exception:
-            # If yfinance fails, we still return None to maintain strict validation
+            # If yfinance allows it, we want it, but if it crashes, we can't do much
             pass
             
         return None

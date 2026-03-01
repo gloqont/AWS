@@ -6,6 +6,9 @@ const API_PROXY_TARGET =
 
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
   async rewrites() {
     return [
       {

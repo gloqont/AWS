@@ -1,569 +1,1426 @@
 {
   "items": [
     {
-      "id": "prt_0591f68a3bcc",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4783.75,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5758453096420173
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.42415469035798276
-        }
-      ],
-      "created_at": "2026-02-05T17:29:48Z"
-    },
-    {
-      "id": "prt_ef009372319c",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4783.75,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5758453096420173
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.42415469035798276
-        }
-      ],
-      "created_at": "2026-02-05T17:25:41Z"
-    },
-    {
-      "id": "prt_3d6a00b54724",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4783.75,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5758453096420173
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.42415469035798276
-        }
-      ],
-      "created_at": "2026-02-05T17:24:11Z"
-    },
-    {
-      "id": "prt_d5d2751c5d0d",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4783.75,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5758453096420173
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.42415469035798276
-        }
-      ],
-      "created_at": "2026-02-05T17:20:06Z"
-    },
-    {
-      "id": "prt_e60a2e257ac7",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5263667449429407
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4736332550570593
-        }
-      ],
-      "created_at": "2026-02-05T16:44:44Z"
-    },
-    {
-      "id": "prt_b6eae8122464",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5263667449429407
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4736332550570593
-        }
-      ],
-      "created_at": "2026-02-05T16:38:43Z"
-    },
-    {
-      "id": "prt_b3f886c13d68",
+      "id": "prt_6b86e62af96e",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4816.9500732421875,
+      "total_value": 1330.89995,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5605414331892524
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.43945856681074763
+          "weight": 1.0
         }
       ],
-      "created_at": "2026-02-03T03:05:33Z"
+      "created_at": "2026-02-24T08:11:42Z"
     },
     {
-      "id": "prt_951e30b1a42a",
+      "id": "prt_ef273137a263",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4816.9500732421875,
+      "total_value": 3069.3599853515625,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5605414331892524
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.43945856681074763
+          "weight": 1.0
         }
       ],
-      "created_at": "2026-02-03T02:58:46Z"
+      "created_at": "2026-02-15T16:27:16Z"
     },
     {
-      "id": "prt_92d45a4b53f0",
-      "name": "Demo Portfolio",
+      "id": "prt_4119f1ac7fde",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 9035.050048828125,
+      "total_value": 3069.3599853515625,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.2988472762258203
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-15T16:18:19Z"
+    },
+    {
+      "id": "prt_7a2cf0143b4c",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.3599853515625,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-15T12:49:45Z"
+    },
+    {
+      "id": "prt_26638855cff3",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 326389.13412475586,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.010187655275496673
+        },
+        {
+          "ticker": "TCS",
+          "weight": 0.9898123447245033
+        }
+      ],
+      "created_at": "2026-02-15T11:40:25Z"
+    },
+    {
+      "id": "prt_8d343cb6469f",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.3599853515625,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-15T05:31:54Z"
+    },
+    {
+      "id": "prt_8e02bf8fa13a",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 42028.08939287044,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "TCS",
+          "weight": 0.9956600453241983
+        },
+        {
+          "ticker": "IDEA",
+          "weight": 0.004339954675801695
+        }
+      ],
+      "created_at": "2026-02-15T05:30:46Z"
+    },
+    {
+      "id": "prt_0b40ed716889",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3507.539987206459,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "IDEA",
+          "weight": 0.05200225905931014
+        },
+        {
+          "ticker": "AAPL",
+          "weight": 0.9479977409406899
+        }
+      ],
+      "created_at": "2026-02-15T05:15:16Z"
+    },
+    {
+      "id": "prt_04947123038b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T17:26:37Z"
+    },
+    {
+      "id": "prt_f45391aeb325",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T17:18:18Z"
+    },
+    {
+      "id": "prt_117852266162",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T17:08:34Z"
+    },
+    {
+      "id": "prt_8cfaa085a740",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:53:24Z"
+    },
+    {
+      "id": "prt_1e5f8efdc59d",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:52:48Z"
+    },
+    {
+      "id": "prt_452336709ea2",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:52:20Z"
+    },
+    {
+      "id": "prt_e6929d7b0dda",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:51:02Z"
+    },
+    {
+      "id": "prt_e86b0beb9545",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:50:47Z"
+    },
+    {
+      "id": "prt_ae28d64a6004",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:43:11Z"
+    },
+    {
+      "id": "prt_a8a175c1b71d",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:25:31Z"
+    },
+    {
+      "id": "prt_c28b13e16563",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T16:01:07Z"
+    },
+    {
+      "id": "prt_7def54dbde14",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 46830.35296208238,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.05461842241656818
+        },
+        {
+          "ticker": "TCS",
+          "weight": 0.9453815775834318
+        }
+      ],
+      "created_at": "2026-02-14T15:51:49Z"
+    },
+    {
+      "id": "prt_7d800f8bd6a3",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 46830.35296208238,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.05461842241656818
+        },
+        {
+          "ticker": "TCS",
+          "weight": 0.9453815775834318
+        },
+        {
+          "ticker": "NVDA",
+          "weight": 0.0
+        }
+      ],
+      "created_at": "2026-02-14T15:49:38Z"
+    },
+    {
+      "id": "prt_8e3ac748da8c",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T15:46:19Z"
+    },
+    {
+      "id": "prt_de877a56eaf6",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 3069.36,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 1.0
+        }
+      ],
+      "created_at": "2026-02-14T15:44:23Z"
+    },
+    {
+      "id": "prt_cb3f4140ecd8",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 19560.11197927672,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "NVDA",
+          "weight": 0.11215273216861808
+        },
+        {
+          "ticker": "TCS",
+          "weight": 0.887847267831382
+        }
+      ],
+      "created_at": "2026-02-14T13:49:46Z"
+    },
+    {
+      "id": "prt_ac0e40ab2eff",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 45265.85190247401,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "TCS.NS",
+          "weight": 0.9311746093254024
+        },
+        {
+          "ticker": "AAPL",
+          "weight": 0.06882539067459759
+        }
+      ],
+      "created_at": "2026-02-13T17:09:11Z"
+    },
+    {
+      "id": "prt_d494e1171dd4",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 20151.959838867188,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.15466287928108244
+        },
+        {
+          "ticker": "RELIANCE.NS",
+          "weight": 0.8453371207189175
+        }
+      ],
+      "created_at": "2026-02-13T16:46:38Z"
+    },
+    {
+      "id": "prt_c73e7c0f3276",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 49341.59912109375,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "TCS.NS",
+          "weight": 0.6547497444251127
+        },
+        {
+          "ticker": "RELIANCE.NS",
+          "weight": 0.34525025557488725
+        }
+      ],
+      "created_at": "2026-02-13T16:39:50Z"
+    },
+    {
+      "id": "prt_101eb2cf1d0d",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4682.4853515625,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.6090751186425478
+        },
+        {
+          "ticker": "NVDA",
+          "weight": 0.3909248813574522
+        }
+      ],
+      "created_at": "2026-02-13T16:22:30Z"
+    },
+    {
+      "id": "prt_b7d1ecd153a2",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4626.500091552734,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5657192387485438
         },
         {
           "ticker": "MSFT",
-          "weight": 0.2342931100708733
+          "weight": 0.43428076125145615
+        }
+      ],
+      "created_at": "2026-02-13T13:07:28Z"
+    },
+    {
+      "id": "prt_c99cfeb50a8c",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4626.500091552734,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5657192387485438
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.43428076125145615
+        }
+      ],
+      "created_at": "2026-02-13T13:00:26Z"
+    },
+    {
+      "id": "prt_40857777a491",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4626.500091552734,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5657192387485438
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.43428076125145615
+        }
+      ],
+      "created_at": "2026-02-13T11:38:42Z"
+    },
+    {
+      "id": "prt_d486f06b44ed",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4803.15,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.569792740180923
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4302072598190771
+        }
+      ],
+      "created_at": "2026-02-11T13:59:14Z"
+    },
+    {
+      "id": "prt_bad764460117",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4803.15,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.569792740180923
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4302072598190771
+        }
+      ],
+      "created_at": "2026-02-11T13:10:59Z"
+    },
+    {
+      "id": "prt_d01e585aae8a",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4803.15,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.569792740180923
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4302072598190771
+        }
+      ],
+      "created_at": "2026-02-11T08:19:49Z"
+    },
+    {
+      "id": "prt_7a76db5211ee",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4803.15,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.569792740180923
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4302072598190771
+        }
+      ],
+      "created_at": "2026-02-11T08:19:01Z"
+    },
+    {
+      "id": "prt_15857538bb31",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4778.899993896484,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5842767196997579
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.415723280300242
+        }
+      ],
+      "created_at": "2026-02-06T16:51:10Z"
+    },
+    {
+      "id": "prt_6cbf4d032076",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4778.899993896484,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5842767196997579
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.415723280300242
+        }
+      ],
+      "created_at": "2026-02-06T16:28:49Z"
+    },
+    {
+      "id": "prt_a2f79b158202",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4727.450103759766,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5836338778968322
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4163661221031678
+        }
+      ],
+      "created_at": "2026-02-06T13:29:05Z"
+    },
+    {
+      "id": "prt_e24193b6593b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4746.25,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5467052936528839
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4532947063471162
+        }
+      ],
+      "created_at": "2026-02-01T16:47:36Z"
+    },
+    {
+      "id": "prt_66bee4612633",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4746.25,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5467052936528839
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4532947063471162
+        }
+      ],
+      "created_at": "2026-02-01T16:45:38Z"
+    },
+    {
+      "id": "prt_1cabfd119537",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4746.25,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5467052936528839
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4532947063471162
+        }
+      ],
+      "created_at": "2026-02-01T16:45:33Z"
+    },
+    {
+      "id": "prt_d7236d2e4ef0",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4746.25,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5467052936528839
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4532947063471162
+        }
+      ],
+      "created_at": "2026-02-01T16:44:29Z"
+    },
+    {
+      "id": "prt_6ef45514dd80",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4750.299999999999,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.543713028650822
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.456286971349178
+        }
+      ],
+      "created_at": "2026-01-30T08:45:09Z"
+    },
+    {
+      "id": "prt_a2d68d450d5b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4750.299999999999,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.543713028650822
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.456286971349178
+        }
+      ],
+      "created_at": "2026-01-30T08:37:36Z"
+    },
+    {
+      "id": "prt_eaf65d61548b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4750.299999999999,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.543713028650822
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.456286971349178
+        }
+      ],
+      "created_at": "2026-01-30T08:37:24Z"
+    },
+    {
+      "id": "prt_98a493448e49",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4750.299999999999,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.543713028650822
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.456286971349178
+        }
+      ],
+      "created_at": "2026-01-30T08:22:24Z"
+    },
+    {
+      "id": "prt_8be2eef72b7a",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4750.299999999999,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.543713028650822
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.456286971349178
+        }
+      ],
+      "created_at": "2026-01-30T06:25:30Z"
+    },
+    {
+      "id": "prt_63f114febfce",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 9749.02,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.2649291928829769
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.22233003932702977
         },
         {
           "ticker": "TSLA",
-          "weight": 0.46685961370330636
+          "weight": 0.5127407677899932
         }
       ],
-      "created_at": "2026-02-03T01:44:06Z"
+      "created_at": "2026-01-30T06:25:11Z"
     },
     {
-      "id": "prt_ff20af6a7a30",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4816.9500732421875,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5605414331892524
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.43945856681074763
-        }
-      ],
-      "created_at": "2026-02-03T01:43:49Z"
-    },
-    {
-      "id": "prt_7808b454ef00",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5467052992241608
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4532947007758393
-        }
-      ],
-      "created_at": "2026-02-01T18:51:38Z"
-    },
-    {
-      "id": "prt_d80279a74511",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5467052992241608
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4532947007758393
-        }
-      ],
-      "created_at": "2026-02-01T18:48:50Z"
-    },
-    {
-      "id": "prt_c9d660b51bc9",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5467052992241608
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4532947007758393
-        }
-      ],
-      "created_at": "2026-02-01T18:35:04Z"
-    },
-    {
-      "id": "prt_acd584748a8e",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5467052992241608
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4532947007758393
-        }
-      ],
-      "created_at": "2026-02-01T18:32:52Z"
-    },
-    {
-      "id": "prt_09460a74eae1",
-      "name": "Demo Portfolio",
-      "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
-      "base_currency": "USD",
-      "positions": [
-        {
-          "ticker": "AAPL",
-          "weight": 0.5467052992241608
-        },
-        {
-          "ticker": "MSFT",
-          "weight": 0.4532947007758393
-        }
-      ],
-      "created_at": "2026-02-01T18:30:09Z"
-    },
-    {
-      "id": "prt_e4e308a0969d",
+      "id": "prt_bab91dfb22e4",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
+      "total_value": 4700.424999999999,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5467052992241608
+          "weight": 0.5478228032571524
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4532947007758393
+          "weight": 0.45217719674284773
         }
       ],
-      "created_at": "2026-02-01T18:20:30Z"
+      "created_at": "2026-01-29T18:36:32Z"
     },
     {
-      "id": "prt_b8a45aa1a40d",
-      "name": "Demo Portfolio",
+      "id": "prt_18c29eab516b",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4746.250152587891,
+      "total_value": 4700.424999999999,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5467052992241608
+          "weight": 0.5478228032571524
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4532947007758393
+          "weight": 0.45217719674284773
         }
       ],
-      "created_at": "2026-02-01T18:19:57Z"
+      "created_at": "2026-01-29T18:23:08Z"
     },
     {
-      "id": "prt_557ccee4e8f2",
-      "name": "Om Portfolio",
+      "id": "prt_6dd683eba91d",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4735.899505615234,
+      "total_value": 4700.424999999999,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5445005638557948
+          "weight": 0.5478228032571524
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4554994361442052
+          "weight": 0.45217719674284773
         }
       ],
-      "created_at": "2026-01-30T19:15:18Z"
+      "created_at": "2026-01-29T18:17:52Z"
     },
     {
-      "id": "prt_8a8fdeb2d6c3",
-      "name": "Om Mody Portfolio",
+      "id": "prt_8d12053c2ad3",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 9075.850067138672,
+      "total_value": 4700.424999999999,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.2841001110786237
+          "weight": 0.5478228032571524
         },
         {
           "ticker": "MSFT",
-          "weight": 0.23749841773192043
+          "weight": 0.45217719674284773
+        }
+      ],
+      "created_at": "2026-01-29T17:58:27Z"
+    },
+    {
+      "id": "prt_8f448069cf6b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4700.65,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5477965813238596
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4522034186761406
+        },
+        {
+          "ticker": "NVDA",
+          "weight": 0.0
+        }
+      ],
+      "created_at": "2026-01-29T17:54:37Z"
+    },
+    {
+      "id": "prt_d8ced2116bc7",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 1535.615,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.1672424403252117
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.8327575596747885
+        }
+      ],
+      "created_at": "2026-01-29T16:19:18Z"
+    },
+    {
+      "id": "prt_cce428aa5980",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4699.525,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5464807613535411
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4535192386464589
+        }
+      ],
+      "created_at": "2026-01-29T16:01:57Z"
+    },
+    {
+      "id": "prt_92a5f1a9fba6",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4698.65,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5465825290242942
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4534174709757057
+        }
+      ],
+      "created_at": "2026-01-29T15:45:28Z"
+    },
+    {
+      "id": "prt_5a22bdd93c4f",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T12:44:58Z"
+    },
+    {
+      "id": "prt_bdd3bef3dfe8",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 47286.68770024358,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.0542309082985496
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.050926595655835245
+        },
+        {
+          "ticker": "TCS",
+          "weight": 0.8948424960456152
+        }
+      ],
+      "created_at": "2026-01-29T12:30:01Z"
+    },
+    {
+      "id": "prt_fd06f4b0e6d4",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T12:28:58Z"
+    },
+    {
+      "id": "prt_b6bf538afbe7",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T08:52:58Z"
+    },
+    {
+      "id": "prt_bf6567f16f6b",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T08:17:06Z"
+    },
+    {
+      "id": "prt_404352273ff1",
+      "name": "My Portfolio",
+      "risk_budget": "HIGH",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T08:16:37Z"
+    },
+    {
+      "id": "prt_fb5c4e50caed",
+      "name": "My Portfolio",
+      "risk_budget": "LOW",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T08:16:26Z"
+    },
+    {
+      "id": "prt_fa24e05db232",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T08:16:06Z"
+    },
+    {
+      "id": "prt_657103e76ddf",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T07:29:49Z"
+    },
+    {
+      "id": "prt_2467e528b7f6",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
+        }
+      ],
+      "created_at": "2026-01-29T07:21:34Z"
+    },
+    {
+      "id": "prt_69fe6dfb2264",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4972.550048828125,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.5157112546345133
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.4842887453654867
         },
         {
           "ticker": "TSLA",
-          "weight": 0.47840147118945586
+          "weight": 0.0
         }
       ],
-      "created_at": "2026-01-30T19:09:31Z"
+      "created_at": "2026-01-29T07:20:31Z"
     },
     {
-      "id": "prt_edf84969712f",
+      "id": "prt_a04d6a042003",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5263667449429407
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4736332550570593
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T11:24:37Z"
+      "created_at": "2026-01-29T07:19:55Z"
     },
     {
-      "id": "prt_6d19387baf23",
+      "id": "prt_00206c5833b8",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5263667449429407
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4736332550570593
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T11:02:52Z"
+      "created_at": "2026-01-29T07:19:55Z"
     },
     {
-      "id": "prt_780a47953529",
+      "id": "prt_cf0634e4e388",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5263667449429407
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4736332550570593
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T09:40:08Z"
+      "created_at": "2026-01-29T07:19:36Z"
     },
     {
-      "id": "prt_32c3a0e92131",
+      "id": "prt_e6eb8f5174da",
       "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4854.6,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5263667449429407
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.4736332550570593
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T09:26:19Z"
+      "created_at": "2026-01-29T07:16:17Z"
     },
     {
-      "id": "prt_4a6f22c7fe93",
-      "name": "Test Portfolio",
+      "id": "prt_d3e89e27f5c7",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:23:43Z"
+      "created_at": "2026-01-29T07:13:20Z"
     },
     {
-      "id": "prt_5f145a1f894f",
-      "name": "Test Portfolio",
+      "id": "prt_3c931482dbcd",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:04:39Z"
+      "created_at": "2026-01-29T07:09:12Z"
     },
     {
-      "id": "prt_8fa5bd56dbb5",
-      "name": "Test Portfolio",
+      "id": "prt_03de4767056f",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:04:38Z"
+      "created_at": "2026-01-29T07:02:38Z"
     },
     {
-      "id": "prt_dc00c4c47477",
-      "name": "Test Portfolio",
+      "id": "prt_b39684c3b48f",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:03:21Z"
+      "created_at": "2026-01-29T07:02:25Z"
     },
     {
-      "id": "prt_ff7df69de35a",
-      "name": "Test Portfolio",
+      "id": "prt_f4d078a9ec81",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:02:38Z"
+      "created_at": "2026-01-29T07:02:23Z"
     },
     {
-      "id": "prt_f54dfb786dad",
-      "name": "Test Portfolio",
+      "id": "prt_aeae37476b48",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T07:00:28Z"
+      "created_at": "2026-01-29T06:50:00Z"
     },
     {
-      "id": "prt_ea866c047039",
-      "name": "Test Portfolio",
+      "id": "prt_f09f064c42fd",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 10000.0,
+      "total_value": 4972.550048828125,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.5
+          "weight": 0.5157112546345133
         },
         {
           "ticker": "MSFT",
-          "weight": 0.5
+          "weight": 0.4842887453654867
         }
       ],
-      "created_at": "2026-01-17T06:54:49Z"
+      "created_at": "2026-01-29T06:12:28Z"
     },
     {
-      "id": "prt_current",
-      "name": "Current Portfolio",
+      "id": "prt_bb0c21de6bd2",
+      "name": "My Portfolio",
       "risk_budget": "MEDIUM",
-      "total_value": 4865.4,
+      "total_value": 4951.275,
       "base_currency": "USD",
       "positions": [
         {
           "ticker": "AAPL",
-          "weight": 0.53
+          "weight": 0.5155237792285826
         },
         {
           "ticker": "MSFT",
-          "weight": 0.47
+          "weight": 0.4844762207714175
         }
-      ]
+      ],
+      "created_at": "2026-01-28T17:50:52Z"
+    },
+    {
+      "id": "prt_41f1de2f4ee5",
+      "name": "My Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 4950.851000000001,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "AAPL",
+          "weight": 0.515426741786412
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.48457325821358793
+        },
+        {
+          "ticker": "TSLA",
+          "weight": 0.0
+        }
+      ],
+      "created_at": "2026-01-28T17:28:04Z"
+    },
+    {
+      "id": "prt_final_test",
+      "name": "Integration Test Portfolio",
+      "risk_budget": "MEDIUM",
+      "total_value": 250000.0,
+      "base_currency": "USD",
+      "positions": [
+        {
+          "ticker": "SPY",
+          "weight": 0.4
+        },
+        {
+          "ticker": "AGG",
+          "weight": 0.25
+        },
+        {
+          "ticker": "AAPL",
+          "weight": 0.15
+        },
+        {
+          "ticker": "MSFT",
+          "weight": 0.1
+        },
+        {
+          "ticker": "GLD",
+          "weight": 0.1
+        }
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
     }
   ]
 }

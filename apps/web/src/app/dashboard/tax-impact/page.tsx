@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useTutorial } from "@/components/tutorial/TutorialContext";
+import { TAX_IMPACT_TUTORIAL } from "@/components/tutorial/tutorialContent";
+import { useSearchParams } from "next/navigation";
 
 type TaxCountry = "United States" | "India" | "United Kingdom" | "Europe (Generic)" | "Other";
 
@@ -80,6 +83,7 @@ function fmtMoney(n: number) {
 }
 
 export default function TaxImpactPage() {
+  const searchParams = useSearchParams();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
 
@@ -88,6 +92,20 @@ export default function TaxImpactPage() {
   const [loading, setLoading] = useState(true);
   const [countrySaving, setCountrySaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const { startTutorial, isTutorialActive } = useTutorial();
+
+  // Start the tax impact tutorial when the page loads with tutorial param and no tutorial is active
+  useEffect(() => {
+    const tutorialParam = searchParams.get("tutorial");
+    if (tutorialParam === "tax-impact" && !isTutorialActive) {
+      const timer = setTimeout(() => {
+        startTutorial(TAX_IMPACT_TUTORIAL);
+      }, 500); // Small delay to ensure DOM is ready
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, startTutorial, isTutorialActive]);
 
   // Load portfolio + last decision from backend
   useEffect(() => {
@@ -177,8 +195,8 @@ export default function TaxImpactPage() {
   return (
     <div className="min-h-screen px-6 py-8">
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-2xl border border-border bg-card/80 backdrop-blur p-6">
-          <div className="text-sm text-muted-foreground">GLOQONT</div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
+          <div className="text-sm text-white/60">GLOQONT</div>
           <h1 className="text-3xl font-semibold tracking-tight mt-1">Tax Impact</h1>
           <p className="text-sm text-muted-foreground mt-2">
             Post-decision tax drag estimate based on residency assumptions. Not tax advice.

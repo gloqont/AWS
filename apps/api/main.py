@@ -4,21 +4,24 @@ import time
 import secrets
 import math
 import asyncio
-from decimal import Decimal
-from functools import lru_cache
 from typing import List, Literal, Optional, Dict, Any
+from urllib.parse import urlencode, quote_plus
 
-import boto3
 import numpy as np
 import pandas as pd
-import jwt
-from boto3.dynamodb.conditions import Key
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Response, Request, HTTPException
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from pydantic import BaseModel, Field, field_validator
+import traceback
+from fastapi.responses import JSONResponse
 
 from risk import fetch_prices, portfolio_metrics, periods_per_year_from_interval
 from decision_engine import DecisionConsequences, RealLifeDecision, UserViewAdapter, UserType
@@ -29,31 +32,84 @@ from guardrails import INPUT_VALIDATOR
 from asset_resolver import ASSET_RESOLVER, AssetInfo
 from enhanced_decision_classifier import ENHANCED_DECISION_CLASSIFIER, DecisionCategory
 
+# NEW: Decision Intelligence Architecture imports
+from decision_schema import (
+    StructuredDecision, DecisionComparison, DecisionScore, DecisionVerdict,
+    InstrumentAction, Timing, Direction, DecisionType, TimingType
+)
+from intent_parser import parse_decision, IntentParser
+from temporal_engine import run_decision_intelligence, run_decision_intelligence_fast, TemporalSimulationEngine, calculate_execution_context, calculate_risk_analysis, calculate_projections
+from decision_cache import get_cached_result, set_cached_result, get_cache_stats
+from tax_engine import TaxEngine, TaxProfile, PortfolioTaxContext, AssetClass, AccountType, HoldingPeriod, IncomeTier, FilingStatus
+from tax_engine.models import TransactionDetail
+
 load_dotenv()
 
-BOOT_ID = secrets.token_hex(8)
-BOOT_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "dev_secret_change_me")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes"}
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
+ENABLE_YFINANCE_LIVE_FALLBACK = os.getenv("ENABLE_YFINANCE_LIVE_FALLBACK", "false").strip().lower() in {"1", "true", "yes"}
 
-DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
-DATA_DIR = os.getenv("DATA_DIR", DEFAULT_DATA_DIR)
+# Cognito OAuth configuration
+COGNITO_REGION = os.getenv("COGNITO_REGION", "").strip()
+COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "").strip()
+COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "").strip()
+COGNITO_CLIENT_SECRET = os.getenv("COGNITO_CLIENT_SECRET", "").strip()
+COGNITO_DOMAIN = os.getenv("COGNITO_DOMAIN", "").strip()  # host only, no https://
+COGNITO_API_DOMAIN = os.getenv("COGNITO_API_DOMAIN", COGNITO_DOMAIN).strip()  # optional override for token/userInfo host
+COGNITO_REDIRECT_URI = os.getenv("COGNITO_REDIRECT_URI", "http://localhost:3000/api/v1/auth/callback").strip()
+COGNITO_LOGOUT_REDIRECT_URI = os.getenv("COGNITO_LOGOUT_REDIRECT_URI", "http://localhost:3000/login").strip()
+COGNITO_SCOPES = os.getenv("COGNITO_SCOPES", "openid email profile").strip()
+
+serializer = URLSafeTimedSerializer(SESSION_SECRET)
+SESSION_COOKIE = "advisor_session"
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 8  # 8 hours
+OAUTH_STATE_MAX_AGE_SECONDS = 60 * 10  # 10 minutes
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 PORTFOLIOS_PATH = os.path.join(DATA_DIR, "portfolios.json")
 DECISIONS_PATH = os.path.join(DATA_DIR, "decisions.json")  # ✅
 TAX_RULES_PATH = os.path.join(DATA_DIR, "tax_rules.json")  # ✅
 PROFILES_PATH = os.path.join(DATA_DIR, "user_profiles.json")
 
-AWS_REGION = os.getenv("AWS_REGION", "").strip()
-COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "").strip()
-COGNITO_APP_CLIENT_ID = os.getenv("COGNITO_APP_CLIENT_ID", "").strip()
-COGNITO_ISSUER_URL = os.getenv("COGNITO_ISSUER_URL", "").strip()
-AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
+# ── In-memory price cache for instant refetches ──
+_PRICE_CACHE: Dict[str, Any] = {}  # key -> {"data": ..., "ts": float}
+_PRICE_CACHE_TTL = 300  # 5 minutes
+_SYMBOL_PRICE_CACHE: Dict[str, Dict[str, Any]] = {}  # SYMBOL -> {"price": float, "currency": str, "ts": float, "source": str}
+_SYMBOL_PRICE_CACHE_MAX_STALE = 60 * 60 * 24  # 24h hard cap for stale fallback
+_SYMBOL_PRICE_CACHE_FAST_AGE = 120  # 2 minutes for instant quote refresh
 
-USERS_TABLE = os.getenv("DDB_USERS_TABLE", "gloqont_users").strip()
-PORTFOLIOS_TABLE = os.getenv("DDB_PORTFOLIOS_TABLE", "gloqont_portfolios").strip()
-DECISIONS_TABLE = os.getenv("DDB_DECISIONS_TABLE", "gloqont_decisions").strip()
+def _get_cached_prices(cache_key: str):
+    entry = _PRICE_CACHE.get(cache_key)
+    if entry and (time.time() - entry["ts"]) < _PRICE_CACHE_TTL:
+        return entry["data"]
+    return None
 
-app = FastAPI(title="Advisor Dashboard API", version="1.4.0")  # bump version
+def _set_cached_prices(cache_key: str, data: Any):
+    _PRICE_CACHE[cache_key] = {"data": data, "ts": time.time()}
+
+
+def _set_symbol_price_cache(symbol: str, price: float, currency: str = "USD", source: str = "twelve_data") -> None:
+    _SYMBOL_PRICE_CACHE[symbol.upper()] = {
+        "price": float(price),
+        "currency": (currency or "USD").upper(),
+        "ts": time.time(),
+        "source": source,
+    }
+
+
+def _get_symbol_price_cache(symbol: str, max_age_seconds: int = _SYMBOL_PRICE_CACHE_MAX_STALE) -> Optional[Dict[str, Any]]:
+    item = _SYMBOL_PRICE_CACHE.get(symbol.upper())
+    if not item:
+        return None
+    if (time.time() - float(item.get("ts", 0))) <= max_age_seconds:
+        return item
+    return None
+
+app = FastAPI(title="GLOQONT API", version="1.4.0")  # bump version
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,12 +159,20 @@ class ValidationOut(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
 class AnalyzeIn(BaseModel):
     risk_budget: RiskBudget
     positions: List[PositionIn]
     lookback_days: int = 365
     interval: Literal["1d", "1wk", "1mo"] = "1d"
-    projection_horizon_years: Literal[1, 3, 5, 10] = 5
+    # NEW: Monte Carlo path generation for future risk visualization
+    horizon_days: int = Field(default=90, ge=1, le=3650, description="Simulation horizon in days")
+    n_paths: int = Field(default=1000, ge=10, le=5000, description="Number of Monte Carlo paths")
+    include_paths: bool = Field(default=False, description="If True, return simulation paths")
 
 
 # ✅ Decision / Scenario Simulation models
@@ -116,6 +180,22 @@ class DecisionAnalyzeIn(BaseModel):
     decision_text: str = Field(..., min_length=3, max_length=400)
     tax_country: str = Field(default="United States")
     user_type: UserType = Field(default=UserType.RETAIL)  # NEW: User type for canonical output
+
+
+
+class DecisionSimulationIn(BaseModel):
+    decision_text: str = Field(..., min_length=3, max_length=400)
+    mode: Literal["fast", "full"] = "fast"
+    horizon_days: int = Field(default=30, ge=1, le=3650)
+    n_paths: int = Field(default=100, ge=10, le=1000)
+    return_paths: bool = Field(default=False, description="Return raw simulation paths")
+    # Tax Engine fields
+    tax_jurisdiction: str = Field(default="US", description="ISO country code: US, IN, CA, DE, FR, GB, NL")
+    tax_sub_jurisdiction: Optional[str] = Field(default=None, description="State/Province: CA, NY, TX, ON, QC, etc.")
+    tax_account_type: str = Field(default="taxable", description="Account type: taxable, ira_roth, 401k, tfsa, isa, etc.")
+    tax_holding_period: str = Field(default="short_term", description="Simulated holding: short_term or long_term")
+    tax_income_tier: str = Field(default="medium", description="Income tier: low, medium, high, very_high")
+    tax_filing_status: str = Field(default="single", description="Filing status: single, married_joint, etc.")
 
 
 class DecisionOut(BaseModel):
@@ -151,6 +231,8 @@ class ScenarioIn(BaseModel):
     decision_type: str = Field(default="rebalance")  # NEW: "trade" or "rebalance"
     magnitude: int = Field(default=5)
     mode: str = Field(default="Compounding Mode")
+    horizon_days: int = Field(default=90, ge=1, le=3650)
+    n_paths: int = Field(default=1000, ge=10, le=5000)
 
 
 class ScenarioOut(BaseModel):
@@ -216,77 +298,57 @@ class TaxAdviceOut(BaseModel):
 
 
 # ----------------------------
+# NEW: Decision Intelligence API Models
+# ----------------------------
+class DecisionIntelligenceIn(BaseModel):
+    """Input for the Decision Intelligence endpoint."""
+    decision_text: str = Field(..., min_length=3, max_length=500, description="User's natural language decision")
+    horizon_days: int = Field(default=30, ge=1, le=3650, description="Simulation horizon in days")
+    n_paths: int = Field(default=100, ge=10, le=1000, description="Number of Monte Carlo paths")
+    include_paths: bool = Field(default=False, description="If True, return raw simulation paths for visualization")
+
+
+class DecisionIntelligenceOut(BaseModel):
+    """Output from the Decision Intelligence endpoint."""
+    ok: bool
+    
+    # Parsed decision
+    decision_id: str
+    decision_type: str
+    parsed_actions: List[Dict[str, Any]]
+    confidence_score: float
+    parser_warnings: List[str] = Field(default_factory=list)
+    
+    # Comparison metrics (baseline vs scenario)
+    baseline_expected_return: float
+    baseline_volatility: float
+    baseline_max_drawdown: float
+    
+    scenario_expected_return: float
+    scenario_volatility: float
+    scenario_max_drawdown: float
+    
+    delta_return: float
+    delta_volatility: float
+    delta_drawdown: float
+    
+    # Decision verdict
+    verdict: str
+    composite_score: float
+    summary: str
+    key_factors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    
+    # For visualization
+    visualization_data: Optional[Dict[str, Any]] = None
+    
+    # Optional: Raw simulation paths for advanced visualization
+    simulation_paths: Optional[Dict[str, Any]] = None
+
+
+# ----------------------------
 # Storage helpers
 # ----------------------------
-def using_dynamodb() -> bool:
-    return bool(AWS_REGION and USERS_TABLE and PORTFOLIOS_TABLE and DECISIONS_TABLE)
-
-
-@lru_cache(maxsize=1)
-def ddb_resource():
-    if not AWS_REGION:
-        raise RuntimeError("AWS_REGION is required to use DynamoDB")
-    return boto3.resource("dynamodb", region_name=AWS_REGION)
-
-
-@lru_cache(maxsize=1)
-def cognito_jwk_client(issuer: str):
-    return jwt.PyJWKClient(f"{issuer.rstrip('/')}/.well-known/jwks.json")
-
-
-def _to_ddb(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {k: _to_ddb(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_to_ddb(v) for v in value]
-    if isinstance(value, float):
-        return Decimal(str(value))
-    return value
-
-
-def _from_ddb(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {k: _from_ddb(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_from_ddb(v) for v in value]
-    if isinstance(value, Decimal):
-        # Preserve whole-number values as ints where possible.
-        if value == value.to_integral_value():
-            return int(value)
-        return float(value)
-    return value
-
-
-def _query_user_items(table_name: str, user_id: str) -> List[Dict[str, Any]]:
-    table = ddb_resource().Table(table_name)
-    resp = table.query(KeyConditionExpression=Key("user_id").eq(user_id))
-    return [_from_ddb(item) for item in resp.get("Items", [])]
-
-
-def _replace_user_items(
-    table_name: str,
-    user_id: str,
-    sort_key_name: str,
-    items: List[Dict[str, Any]],
-) -> None:
-    table = ddb_resource().Table(table_name)
-    existing = table.query(KeyConditionExpression=Key("user_id").eq(user_id)).get("Items", [])
-    with table.batch_writer() as batch:
-        for item in existing:
-            sk = item.get(sort_key_name)
-            if sk is None:
-                continue
-            batch.delete_item(Key={"user_id": user_id, sort_key_name: sk})
-        for item in items:
-            sk = item.get("id")
-            if not sk:
-                continue
-            record = dict(item)
-            record["user_id"] = user_id
-            record[sort_key_name] = sk
-            batch.put_item(Item=_to_ddb(record))
-
-
 def ensure_data_file():
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -318,51 +380,25 @@ def ensure_data_file():
             )
 
 
-def read_portfolios(user_id: str):
-    if using_dynamodb():
-        items = _query_user_items(PORTFOLIOS_TABLE, user_id)
-        normalized: List[Dict[str, Any]] = []
-        for item in items:
-            row = dict(item)
-            row.pop("user_id", None)
-            row.pop("portfolio_id", None)
-            normalized.append(row)
-        normalized.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
-        return {"items": normalized}
+def read_portfolios():
     ensure_data_file()
     with open(PORTFOLIOS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def write_portfolios(user_id: str, payload: Dict[str, Any]):
-    if using_dynamodb():
-        _replace_user_items(PORTFOLIOS_TABLE, user_id, "portfolio_id", payload.get("items", []))
-        return
+def write_portfolios(payload):
     ensure_data_file()
     with open(PORTFOLIOS_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
 
-def read_decisions(user_id: str):
-    if using_dynamodb():
-        items = _query_user_items(DECISIONS_TABLE, user_id)
-        normalized: List[Dict[str, Any]] = []
-        for item in items:
-            row = dict(item)
-            row.pop("user_id", None)
-            row.pop("decision_id", None)
-            normalized.append(row)
-        normalized.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
-        return {"items": normalized}
+def read_decisions():
     ensure_data_file()
     with open(DECISIONS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def write_decisions(user_id: str, payload: Dict[str, Any]):
-    if using_dynamodb():
-        _replace_user_items(DECISIONS_TABLE, user_id, "decision_id", payload.get("items", []))
-        return
+def write_decisions(payload):
     ensure_data_file()
     with open(DECISIONS_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -387,38 +423,6 @@ def write_profiles(payload):
     ensure_data_file()
     with open(PROFILES_PATH, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
-
-
-def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
-    if using_dynamodb():
-        table = ddb_resource().Table(USERS_TABLE)
-        resp = table.get_item(Key={"user_id": user_id})
-        item = _from_ddb(resp.get("Item"))
-        if not item:
-            return None
-        return item.get("profile")
-    store = read_profiles()
-    return store.get("profiles", {}).get(user_id)
-
-
-def save_user_profile(user_id: str, profile: Dict[str, Any]) -> None:
-    if using_dynamodb():
-        table = ddb_resource().Table(USERS_TABLE)
-        table.update_item(
-            Key={"user_id": user_id},
-            UpdateExpression="SET #p = :p, #u = :u",
-            ExpressionAttributeNames={"#p": "profile", "#u": "updated_at"},
-            ExpressionAttributeValues={
-                ":p": _to_ddb(profile),
-                ":u": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            },
-        )
-        return
-    store = read_profiles()
-    profiles = store.get("profiles", {}) or {}
-    profiles[user_id] = profile
-    store["profiles"] = profiles
-    write_profiles(store)
 
 
 # ----------------------------
@@ -453,61 +457,220 @@ def validate_portfolio(p: PortfolioBase, tolerance: float = 0.01) -> ValidationO
 # ----------------------------
 # Auth helpers
 # ----------------------------
+def _cognito_enabled() -> bool:
+    return bool(COGNITO_DOMAIN and COGNITO_CLIENT_ID and COGNITO_REDIRECT_URI)
+
+
+def _build_cognito_url(path: str, *, api: bool = False) -> str:
+    host_value = COGNITO_API_DOMAIN if api else COGNITO_DOMAIN
+    host = host_value.removeprefix("https://").removesuffix("/")
+    return f"https://{host}{path}"
+
+
+def _safe_next_path(next_path: Optional[str]) -> str:
+    if not next_path:
+        return "/dashboard/portfolio-optimizer"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        return "/dashboard/portfolio-optimizer"
+    return next_path
+
+
 def require_admin(request: Request):
-    if not AUTH_REQUIRED:
-        return {"role": "admin", "sub": "local-admin", "email": "local@gloqont.dev"}
-
-    if not (COGNITO_ISSUER_URL and COGNITO_APP_CLIENT_ID and COGNITO_USER_POOL_ID):
-        raise HTTPException(status_code=500, detail="Cognito auth is enabled but config is incomplete")
-
-    auth_header = request.headers.get("Authorization", "")
-    token = ""
-    if auth_header.startswith("Bearer "):
-        token = auth_header.replace("Bearer ", "", 1).strip()
+    token = request.cookies.get(SESSION_COOKIE)
     if not token:
-        token = (request.cookies.get("gloqont_auth_token") or "").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing authentication token")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        data = serializer.loads(token, max_age=SESSION_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except BadSignature:
+        raise HTTPException(status_code=401, detail="Invalid session")
 
-    issuer = COGNITO_ISSUER_URL.rstrip("/")
+    return data
+
+
+# ----------------------------
+# Auth routes
+# ----------------------------
+@app.get("/api/v1/auth/login")
+def cognito_login(next: Optional[str] = None, mode: Optional[str] = None):
+    if not _cognito_enabled():
+        raise HTTPException(status_code=500, detail="Cognito auth is not configured on the server")
+
+    next_path = _safe_next_path(next)
+    oauth_state = serializer.dumps(
+        {
+            "next": next_path,
+            "mode": mode if mode in {"signup", "login"} else "login",
+            "nonce": secrets.token_hex(12),
+            "iat": int(time.time()),
+        },
+        salt="oauth_state",
+    )
+
+    params = {
+        "response_type": "code",
+        "client_id": COGNITO_CLIENT_ID,
+        "redirect_uri": COGNITO_REDIRECT_URI,
+        "scope": COGNITO_SCOPES,
+        "state": oauth_state,
+    }
+    if mode == "signup":
+        params["screen_hint"] = "signup"
+
+    authorize_url = _build_cognito_url(f"/oauth2/authorize?{urlencode(params)}")
+    return RedirectResponse(url=authorize_url, status_code=307)
+
+
+@app.post("/api/v1/auth/login")
+def login(body: LoginIn, response: Response):
+    # Backward-compatible local admin login for environments not yet migrated to Cognito.
+    if _cognito_enabled():
+        raise HTTPException(status_code=400, detail="Use GET /api/v1/auth/login for Cognito sign-in")
+
+    if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    session = {
+        "sub": "admin",
+        "role": "admin",
+        "nonce": secrets.token_hex(8),
+        "iat": int(time.time()),
+    }
+    token = serializer.dumps(session)
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
+    )
+    return {"ok": True}
+
+
+@app.get("/api/v1/auth/callback")
+def cognito_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None, error_description: Optional[str] = None, response: Response = None):
+    if not _cognito_enabled():
+        raise HTTPException(status_code=500, detail="Cognito auth is not configured on the server")
+
+    if error:
+        raise HTTPException(status_code=401, detail=f"Cognito error: {error} ({error_description or 'no description'})")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing OAuth authorization code")
+    if not state:
+        raise HTTPException(status_code=400, detail="Missing OAuth state")
 
     try:
-        jwk_client = cognito_jwk_client(issuer)
-        signing_key = jwk_client.get_signing_key_from_jwt(token).key
-        claims = jwt.decode(
-            token,
-            signing_key,
-            algorithms=["RS256"],
-            issuer=issuer,
-            options={"verify_aud": False},
+        state_data = serializer.loads(state, salt="oauth_state", max_age=OAUTH_STATE_MAX_AGE_SECONDS)
+    except SignatureExpired:
+        raise HTTPException(status_code=401, detail="OAuth state expired")
+    except BadSignature:
+        raise HTTPException(status_code=401, detail="Invalid OAuth state")
+
+    next_path = _safe_next_path(state_data.get("next"))
+    token_url = _build_cognito_url("/oauth2/token", api=True)
+    userinfo_url = _build_cognito_url("/oauth2/userInfo", api=True)
+
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": COGNITO_CLIENT_ID,
+        "code": code,
+        "redirect_uri": COGNITO_REDIRECT_URI,
+    }
+    if COGNITO_CLIENT_SECRET:
+        token_payload["client_secret"] = COGNITO_CLIENT_SECRET
+
+    try:
+        token_res = httpx.post(
+            token_url,
+            data=token_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10.0,
         )
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}") from exc
+        token_res.raise_for_status()
+        token_data = token_res.json()
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Failed token exchange with Cognito: {e}")
 
-    token_use = claims.get("token_use")
-    expected_client_id = COGNITO_APP_CLIENT_ID
-    if token_use == "id":
-        if claims.get("aud") != expected_client_id:
-            raise HTTPException(status_code=401, detail="Token audience mismatch")
-    else:
-        if claims.get("client_id") != expected_client_id and claims.get("aud") != expected_client_id:
-            raise HTTPException(status_code=401, detail="Token client mismatch")
+    access_token = token_data.get("access_token")
+    id_token = token_data.get("id_token")
+    if not access_token or not id_token:
+        raise HTTPException(status_code=401, detail="Cognito token response missing required tokens")
 
-    sub = claims.get("sub")
-    if not sub:
-        raise HTTPException(status_code=401, detail="Token missing subject")
+    try:
+        userinfo_res = httpx.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10.0,
+        )
+        userinfo_res.raise_for_status()
+        userinfo = userinfo_res.json()
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Failed to retrieve Cognito user profile: {e}")
 
-    return {"role": "user", "sub": str(sub), "email": claims.get("email")}
+    session = {
+        "sub": userinfo.get("sub"),
+        "email": userinfo.get("email"),
+        "role": "user",
+        "provider": "cognito",
+        "iat": int(time.time()),
+        "nonce": secrets.token_hex(8),
+    }
+    token = serializer.dumps(session)
+    response = response or Response()
+    response.status_code = 307
+    response.headers["Location"] = next_path
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
+    )
+    return response
 
 
-@app.get("/api/v1/meta/boot")
-def meta_boot():
+@app.post("/api/v1/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(key=SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/v1/auth/logout")
+def logout_redirect(next: Optional[str] = None, response: Response = None):
+    next_path = _safe_next_path(next or "/login")
+
+    response = response or Response()
+    response.delete_cookie(key=SESSION_COOKIE, path="/")
+
+    if not _cognito_enabled():
+        response.status_code = 307
+        response.headers["Location"] = next_path
+        return response
+
+    logout_target = _build_cognito_url(
+        f"/logout?{urlencode({'client_id': COGNITO_CLIENT_ID, 'logout_uri': COGNITO_LOGOUT_REDIRECT_URI})}"
+    )
+    response.status_code = 307
+    response.headers["Location"] = logout_target
+    return response
+
+
+@app.get("/api/v1/auth/me")
+def me(request: Request):
+    data = require_admin(request)
     return {
         "ok": True,
-        "boot_id": BOOT_ID,
-        "boot_at": BOOT_AT,
-        "auth_required": AUTH_REQUIRED,
-        "dynamodb_enabled": using_dynamodb(),
+        "user": {
+            "sub": data.get("sub"),
+            "email": data.get("email"),
+            "role": data.get("role", "user"),
+            "provider": data.get("provider", "local"),
+        },
     }
 
 
@@ -522,7 +685,7 @@ def portfolio_validate(request: Request, body: PortfolioIn):
 
 @app.post("/api/v1/portfolio/save")
 def portfolio_save(request: Request, body: PortfolioIn):
-    actor = require_admin(request)
+    require_admin(request)
 
     v = validate_portfolio(body)
     if not v.ok:
@@ -531,7 +694,7 @@ def portfolio_save(request: Request, body: PortfolioIn):
             detail={"errors": v.errors, "warnings": v.warnings, "sum_weights": v.sum_weights},
         )
 
-    store = read_portfolios(actor["sub"])
+    store = read_portfolios()
     item = {
         "id": f"prt_{secrets.token_hex(6)}",
         "name": body.name,
@@ -542,14 +705,14 @@ def portfolio_save(request: Request, body: PortfolioIn):
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     store["items"].insert(0, item)
-    write_portfolios(actor["sub"], store)
+    write_portfolios(store)
     return {"ok": True, "portfolio": item}
 
 
 @app.get("/api/v1/portfolio/current")
 def portfolio_current(request: Request):
-    actor = require_admin(request)
-    store = read_portfolios(actor["sub"])
+    require_admin(request)
+    store = read_portfolios()
     items = store.get("items", [])
     if not items:
         return {"ok": True, "portfolio": None}
@@ -593,95 +756,119 @@ def tax_rules(request: Request, country: str = "United States"):
 # ----------------------------
 @app.get("/api/v1/user/profile")
 def user_profile_get(request: Request):
-    actor = require_admin(request)
-    return {"ok": True, "profile": get_user_profile(actor["sub"])}
+    require_admin(request)
+    # in this simple app we store a single admin profile
+    store = read_profiles()
+    return {"ok": True, "profile": store.get("profiles", {}).get("admin")}
 
 
 @app.post("/api/v1/user/profile")
 def user_profile_save(request: Request, body: dict):
-    actor = require_admin(request)
+    require_admin(request)
+    store = read_profiles()
+    profiles = store.get("profiles", {}) or {}
 
     answers = body.get("answers") or {}
     skipped = bool(body.get("skipped", False))
     level = classify_level(answers) if not skipped else None
 
-    profile = {
+    profiles["admin"] = {
         "answers": answers,
         "skipped": skipped,
         "level": level,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    save_user_profile(actor["sub"], profile)
-    return {"ok": True, "profile": profile}
+    store["profiles"] = profiles
+    write_profiles(store)
+    return {"ok": True, "profile": profiles["admin"]}
 
 
 # ----------------------------
 # Market helpers (search)
 # ----------------------------
 @app.get("/api/v1/market/search")
-def market_search(request: Request, q: str):
+def market_search(request: Request, q: str, country: str = "US"):
     require_admin(request)
     if not q or not q.strip():
         raise HTTPException(status_code=400, detail="query required")
 
+    query = q.strip().upper()
+    query = _canonical_symbol_for_prices(query)
+
     # First try to resolve using our canonical asset resolver
     asset_info = ASSET_RESOLVER.resolve_asset(q)
     if asset_info and asset_info.is_valid:
+        resolved_symbol = str(asset_info.symbol or query).upper()
+        if asset_info.country == "India" and "." not in resolved_symbol:
+            resolved_symbol = f"{resolved_symbol}.NS"
         return {
             "ok": True,
-            "symbol": asset_info.symbol,
+            "symbol": resolved_symbol,
             "shortname": asset_info.name,
             "exchange": "NSE" if asset_info.country == "India" else "NASDAQ" if asset_info.country == "USA" else "OTHER",
             "currency": "INR" if asset_info.country == "India" else "USD",
         }
 
-    # Then try the original Yahoo Finance search
-    url = f"https://query1.finance.yahoo.com/v1/finance/search?q={q}&quotesCount=6&newsCount=0"
-    try:
-        r = httpx.get(url, timeout=10.0)
-        r.raise_for_status()
-        data = r.json()
-        quotes = data.get("quotes", [])
-        # pick the first equity-like symbol
-        for qitem in quotes:
-            typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
-            if (typ and "EQUITY" in str(typ).upper()) or qitem.get("symbol"):
+    # Twelve Data global symbol search (primary)
+    if TWELVE_DATA_API_KEY:
+        td = _twelve_get_json("/symbol_search", {"symbol": query, "outputsize": 12})
+        if td and str(td.get("status", "")).lower() != "error":
+            data = td.get("data", []) if isinstance(td, dict) else []
+            if isinstance(data, list) and data:
+                # Prefer exact symbol startswith + optional country filter
+                best = None
+                for item in data:
+                    sym = str(item.get("symbol", "")).upper()
+                    item_country = str(item.get("country", "")).upper()
+                    if country and item_country and country.upper() not in item_country and country.upper() != "US":
+                        # Keep global behavior; only apply filter when clearly not US default
+                        pass
+                    if sym == query or sym.startswith(query):
+                        best = item
+                        break
+                if best is None:
+                    best = data[0]
+
+                raw_symbol = str(best.get("symbol", "")).upper()
+                exch = str(best.get("exchange", "")).upper()
+                mapped_symbol = raw_symbol
+                if exch == "NSE":
+                    mapped_symbol = f"{raw_symbol}.NS"
+                elif exch == "BSE":
+                    mapped_symbol = f"{raw_symbol}.BO"
+                elif exch in ("LSE", "XLON"):
+                    mapped_symbol = f"{raw_symbol}.L"
+                elif exch in ("TSX", "XTSE"):
+                    mapped_symbol = f"{raw_symbol}.TO"
+
                 return {
                     "ok": True,
-                    "symbol": qitem.get("symbol"),
-                    "shortname": qitem.get("shortname") or qitem.get("longname"),
-                    "exchange": qitem.get("exchange"),
-                    "currency": qitem.get("currency"),
+                    "symbol": mapped_symbol,
+                    "shortname": best.get("instrument_name") or best.get("name") or mapped_symbol,
+                    "exchange": best.get("exchange"),
+                    "currency": best.get("currency") or "USD",
                 }
-    except Exception:
-        pass
 
-    # If the original search fails, try with common international suffixes
-    international_suffixes = [".NS", ".BO", ".JK", ".SI", ".HK", ".TO", ".L", ".PA", ".DE", ".MI"]
-    base_query = q.rstrip('.NS').rstrip('.BO').rstrip('.JK').rstrip('.SI').rstrip('.HK').rstrip('.TO').rstrip('.L').rstrip('.PA').rstrip('.DE').rstrip('.MI')
+    # Direct symbol probe fallback (handles plain inputs like BPCL -> BPCL.NS/BPCL.BO).
+    # This avoids hard-failing search when provider symbol-search indexes are incomplete.
+    probe_candidates: List[str] = []
+    if "." in query:
+        probe_candidates.append(query)
+    else:
+        probe_candidates.extend([query, f"{query}.NS", f"{query}.BO"])
+    probe_candidates = _sanitize_tickers(probe_candidates)
 
-    for suffix in international_suffixes:
-        if not q.endswith(suffix):
-            test_query = f"{base_query}{suffix}"
-            url = f"https://query1.finance.yahoo.com/v1/finance/search?q={test_query}&quotesCount=6&newsCount=0"
-            try:
-                r = httpx.get(url, timeout=10.0)
-                r.raise_for_status()
-                data = r.json()
-                quotes = data.get("quotes", [])
-                # pick the first equity-like symbol
-                for qitem in quotes:
-                    typ = qitem.get("quoteType") or qitem.get("typeDisp") or ""
-                    if (typ and "EQUITY" in str(typ).upper()) or qitem.get("symbol"):
-                        return {
-                            "ok": True,
-                            "symbol": qitem.get("symbol"),
-                            "shortname": qitem.get("shortname") or qitem.get("longname"),
-                            "exchange": qitem.get("exchange"),
-                            "currency": qitem.get("currency"),
-                        }
-            except Exception:
-                continue
+    if probe_candidates:
+        p, c, _ = _fetch_live_quotes(probe_candidates)
+        for cand in probe_candidates:
+            if cand in p:
+                return {
+                    "ok": True,
+                    "symbol": cand,
+                    "shortname": cand,
+                    "exchange": "NSE" if cand.endswith(".NS") else "BSE" if cand.endswith(".BO") else "GLOBAL",
+                    "currency": c.get(cand, _default_currency_for_symbol(cand)),
+                }
 
     raise HTTPException(status_code=404, detail="No ticker found")
 
@@ -776,6 +963,252 @@ def analyze_decision_text(text: str, portfolio: Dict[str, Any]) -> str:
     return "Macro / Multi-Asset"
 
 
+@app.post("/api/v1/decision/parse")
+def decision_parse(request: Request, body: DecisionAnalyzeIn):
+    """
+    Interpretation Layer Endpoint.
+    Propagates the strict JSON parsing and validation to the UI.
+    Matching User Requirement: Input Interpretation Layer
+    """
+    require_admin(request)
+    
+    # Load portfolio for context-aware parsing
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    portfolio = pitems[0] if pitems else None
+    
+    # Parse (Hybrid: Heuristic -> LLM -> Validation)
+    decision = parse_decision(body.decision_text, portfolio)
+    
+    return {"ok": True, "decision": decision.dict()}
+
+
+@app.post("/api/v1/decision/simulate")
+def decision_simulate(request: Request, body: DecisionSimulationIn):
+    """
+    Simulation & Intelligence Layer Endpoint.
+    Orchestrates the full flow: Parse -> Simulate -> Score -> Explain.
+    Returns Universal Output Blueprint data.
+    """
+    require_admin(request)
+    
+    try:
+        # Load portfolio
+        pstore = read_portfolios()
+        pitems = pstore.get("items", [])
+        portfolio = pitems[0] if pitems else None
+        
+        if not portfolio:
+            raise HTTPException(status_code=404, detail="No portfolio found")
+            
+        # 1. Parse Decision (Interpretation Layer)
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        # 1.5. Pre-process Decision: Resolve Shares -> USD
+        # We need real prices to convert "10 shares" -> "$2000" -> "2%"
+        all_symbols = tuple(decision.get_all_symbols())
+        if all_symbols:
+            try:
+                price_result = fetch_prices(tickers=all_symbols, lookback_days=5, cache_ttl_seconds=300)
+                latest_prices = {t: price_result.prices[t].iloc[-1] for t in all_symbols if t in price_result.prices}
+                
+                for action in decision.actions:
+                    if action.symbol in latest_prices:
+                        price = float(latest_prices[action.symbol])
+                        if action.size_shares is not None:
+                            action.size_usd = action.size_shares * price
+                            # Clearing size_percent to force recalculation based on USD
+                            action.size_percent = None 
+            except Exception as e:
+                print(f"Price fetch warning in pre-process: {e}")
+
+        # 2. Run Intelligence Engine (Simulation Layer)
+        if body.mode == "fast":
+            comparison, score = run_decision_intelligence_fast(
+                portfolio, decision, body.horizon_days
+            )
+            base_paths, scen_paths = None, None
+        else:
+            comparison, score, base_paths, scen_paths = run_decision_intelligence(
+                portfolio, decision, body.horizon_days, body.n_paths, body.return_paths
+            )
+        
+        # 3. Calculate Execution Context (Section 2)
+        execution_context = calculate_execution_context(portfolio, decision)
+        
+        # 4. Calculate Risk Analysis (Sections 6-10)
+        risk_analysis = calculate_risk_analysis(
+            portfolio, decision, comparison, scen_paths, body.horizon_days
+        )
+        
+            
+        # 5. Calculate Projections (NEW)
+        projections = {}
+        if scen_paths:
+            projections = calculate_projections(scen_paths)
+        else:
+            # Fallback for fast mode: Approximate using annual return
+            r = comparison.scenario_expected_return / 100.0
+            projections = {
+                "1M": r * (30/365),
+                "3M": r * (90/365),
+                "6M": r * (180/365),
+                "1Y": r
+            }
+
+        # 6. Tax Engine Calculation (Institutional-Grade)
+        tax_analysis = None
+        try:
+            tax_engine = TaxEngine()
+            
+            # Build TaxProfile from request
+            tax_profile = TaxProfile(
+                jurisdiction=body.tax_jurisdiction,
+                sub_jurisdiction=body.tax_sub_jurisdiction,
+                filing_status=FilingStatus(body.tax_filing_status) if body.tax_filing_status else FilingStatus.SINGLE,
+                income_tier=IncomeTier(body.tax_income_tier) if body.tax_income_tier else IncomeTier.MEDIUM,
+            )
+            
+            # Build PortfolioTaxContext
+            portfolio_tax_ctx = PortfolioTaxContext(
+                account_type=AccountType(body.tax_account_type) if body.tax_account_type else AccountType.TAXABLE,
+                holding_period=HoldingPeriod(body.tax_holding_period) if body.tax_holding_period else HoldingPeriod.SHORT_TERM,
+                total_portfolio_value_usd=portfolio.get("total_value", 100000),
+                estimated_gain_percent=20.0, # Default assumption for simulations
+            )
+            
+            # Build TransactionDetails from decision actions
+            transactions = []
+            for action in decision.actions:
+                # Include ALL actions (Buy/Sell) so the engine can report "No Tax" for buys
+                # Calculate transaction value
+                txn_value = 0.0
+                if action.size_usd:
+                    txn_value = action.size_usd
+                elif action.size_percent:
+                    txn_value = (action.size_percent / 100.0) * portfolio.get("total_value", 100000)
+                else:
+                    txn_value = portfolio.get("total_value", 100000) * 0.05  # Default 5%
+                
+                asset_class = tax_engine.classify_asset(action.symbol, portfolio)
+                
+                # Determine estimated gain/loss for SELLs
+                est_gain = None
+                direction_str = getattr(action.direction, 'value', str(action.direction)).lower()
+                if direction_str in ["sell", "liquidate", "reduce", "short"]:
+                     # For simulation, assume a default gain % (e.g. 20%) if we can't look up lots
+                     est_gain = txn_value * 0.20
+                elif direction_str in ["buy", "long", "add", "increase"] and comparison:
+                     # For BUY, calculate EXPECTED future gain based on simulation return
+                     # This allows "Projected Realization Tax" to be shown
+                     proj_return = comparison.scenario_expected_return  # This is in percent (e.g. 7.09 means 7.09%)
+                     if proj_return > 0:
+                         est_gain = txn_value * (proj_return / 100.0)  # Convert percent to ratio
+                     print(f"DEBUG TAX BUY: direction={direction_str}, proj_return={proj_return}%, txn_value={txn_value}, est_gain={est_gain}")
+                
+                transactions.append(TransactionDetail(
+                    symbol=action.symbol,
+                    direction=getattr(action.direction, 'value', str(action.direction)),
+                    transaction_value_usd=txn_value,
+                    asset_class=asset_class,
+                    estimated_gain_usd=est_gain,
+                ))
+            
+            # Always run tax engine, even if empty (returns "no impact")
+            if transactions:
+                tax_impact = tax_engine.calculate(tax_profile, portfolio_tax_ctx, transactions)
+                tax_analysis = tax_impact.dict()
+            else:
+                # Edge case: No actions at all
+                tax_analysis = None
+        except Exception as tax_err:
+            print(f"TAX ENGINE WARNING: {tax_err}")
+            tax_analysis = {"error": str(tax_err), "summary": "Tax calculation failed"}
+
+        # 7. Generate Visualization Data (Canonical Interface)
+        # We need to instantiate the canonical objects to get standard visualizations
+        try:
+            # Create consequences engine
+            consequences = DecisionConsequences(
+                portfolio_data=portfolio,
+                decision_text=body.decision_text,
+                decision_category=decision.decision_type
+            )
+            
+            # Create canonical decision wrapper
+            real_life_decision = RealLifeDecision(
+                decision_consequences=consequences,
+                decision_text=body.decision_text,
+                portfolio_data=portfolio
+            )
+            
+            # Extract visualization data
+            visualization_data = real_life_decision.visualization_data
+        except Exception as viz_err:
+            print(f"VIZ GENERATION WARNING: {viz_err}")
+            traceback.print_exc()
+            visualization_data = None
+
+        # 8. Compute Tax Metrics (Pre-Tax vs After-Tax comparison)
+        tax_metrics = None
+        if tax_analysis and not tax_analysis.get("error"):
+            try:
+                tax_drag_pct = tax_analysis.get("effective_tax_rate", 0.0) / 100.0
+                # Conversion: Temporal Engine returns Percentages (e.g. 5.0 for 5%)
+                # Frontend expects Decimals (e.g. 0.05 for 5%) for this specific TaxMetrics table
+                scenario_ret = (comparison.scenario_expected_return if comparison else 0) / 100.0
+                
+                scenario_dd = (comparison.scenario_max_drawdown if comparison else 0) / 100.0
+                scenario_tail = (comparison.scenario_tail_loss if comparison else 0) / 100.0
+
+                tax_metrics = {
+                    "expected_return_pre": round(scenario_ret, 4),
+                    "expected_return_post": round(scenario_ret * (1 - tax_drag_pct), 4),
+                    "max_drawdown_pre": round(scenario_dd, 4),
+                    "max_drawdown_post": round(scenario_dd - (tax_drag_pct * abs(scenario_dd) * 0.5), 4),
+                    "tail_loss_pre": round(scenario_tail, 4),
+                    "tail_loss_post": round(scenario_tail - (tax_drag_pct * abs(scenario_tail) * 0.5), 4),
+                }
+            except Exception:
+                tax_metrics = None
+
+        # Exit assumptions from horizon context
+        exit_assumptions = None
+        if tax_analysis and not tax_analysis.get("error"):
+            hp = body.tax_holding_period or "short_term"
+            exit_assumptions = {
+                "trigger": "Scenario Simulation Exit",
+                "holding_period_days": body.horizon_days,
+                "tax_regime": tax_analysis.get("tax_regime_applied", hp.replace("_", " ").title()),
+            }
+            # Attach to tax_analysis too
+            tax_analysis["exit_assumptions"] = exit_assumptions
+
+        # 9. Construct Response (Universal Output Blueprint)
+        return {
+            "ok": True,
+            "decision": decision.dict(),
+            "comparison": comparison.dict(),
+            "score": score.dict(),
+            "execution_context": execution_context.dict(),
+            "risk_analysis": risk_analysis.dict(),
+            "baseline_paths": [p.dict() for p in base_paths] if base_paths else None,
+            "scenario_paths": [p.dict() for p in scen_paths] if scen_paths else None,
+            "projections": projections,
+            "tax_analysis": tax_analysis,
+            "tax_metrics": tax_metrics,
+            "visualization_data": visualization_data,
+            "mode": body.mode
+        }
+    except Exception as e:
+        print(f"SIMULATION ERROR: {str(e)}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500, 
+            content={"message": f"Simulation failed: {str(e)}", "traceback": traceback.format_exc()}
+        )
+
+
 def consequence_engine(target: str, magnitude: int, portfolio: Dict[str, Any], total_value: float, mode: str) -> Dict[str, Any]:
     # weights in stored portfolio are decimals (0..1)
     positions = portfolio.get("positions", [])
@@ -819,10 +1252,10 @@ def consequence_engine(target: str, magnitude: int, portfolio: Dict[str, Any], t
 @app.post("/api/v1/scenario/run", response_model=ScenarioOut)
 def scenario_run(request: Request, body: ScenarioIn):
     import re  # Import re at the beginning to avoid UnboundLocalError
-    actor = require_admin(request)
+    require_admin(request)
 
     # Load portfolio
-    pstore = read_portfolios(actor["sub"])
+    pstore = read_portfolios()
     pitems = pstore.get("items", [])
     if not pitems:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -1010,7 +1443,11 @@ def scenario_run(request: Request, body: ScenarioIn):
         if total_weight > 0:
             for pos in current_positions:
                 ticker = pos.get("ticker")
-                weight = (pos.get("weight", 0) * 100) / total_weight * 100  # Normalize to 100%
+                # Normalize only if rebalancing
+                if body.decision_type == "rebalance":
+                    weight = (pos.get("weight", 0) * 100) / total_weight * 100
+                else:
+                    weight = pos.get("weight", 0) * 100
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
         else:
             # Fallback if total weight is 0
@@ -1020,8 +1457,9 @@ def scenario_run(request: Request, body: ScenarioIn):
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
 
         # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
+        # Only enforce for rebalance
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1273,7 +1711,9 @@ def scenario_run(request: Request, body: ScenarioIn):
         # Normalize all weights to sum to 100% after the decision
         # This handles the case where the raw sum doesn't equal 100% due to the allocation change
         total_raw_weight = sum(pos["weight_pct"] for pos in new_positions)
-        if total_raw_weight > 0 and abs(total_raw_weight - 100.0) > 0.1:  # Only normalize if significantly different
+        
+        # Only normalize if rebalancing
+        if body.decision_type == "rebalance" and total_raw_weight > 0 and abs(total_raw_weight - 100.0) > 0.1:  # Only normalize if significantly different
             normalized_positions = []
             for pos in new_positions:
                 normalized_weight = (pos["weight_pct"] / total_raw_weight) * 100.0
@@ -1281,8 +1721,9 @@ def scenario_run(request: Request, body: ScenarioIn):
             new_positions = normalized_positions
 
         # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
+        # Only enforce for rebalance
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1435,7 +1876,11 @@ def scenario_run(request: Request, body: ScenarioIn):
         if total_weight > 0:
             for pos in current_positions:
                 ticker = pos.get("ticker")
-                weight = (pos.get("weight", 0) * 100) / total_weight * 100  # Normalize to 100%
+                # Normalize only if rebalancing
+                if body.decision_type == "rebalance":
+                    weight = (pos.get("weight", 0) * 100) / total_weight * 100
+                else:
+                    weight = pos.get("weight", 0) * 100
                 new_positions.append({"symbol": ticker, "weight_pct": round(weight, 2)})
         else:
             # Fallback if total weight is 0
@@ -1458,7 +1903,8 @@ def scenario_run(request: Request, body: ScenarioIn):
     # Validate portfolio weight conservation (weights must sum to 100% ±0.5%)
     if new_positions:
         total_weight_after = sum(pos["weight_pct"] for pos in new_positions)
-        if abs(total_weight_after - 100.0) > 0.5:
+        # Only enforce for rebalance
+        if body.decision_type == "rebalance" and abs(total_weight_after - 100.0) > 0.5:
             raise HTTPException(status_code=500, detail=f"Portfolio weight conservation failed: weights sum to {total_weight_after:.2f}% (expected ~100%)")
 
         # Sort by weight descending and take top 5
@@ -1670,10 +2116,7 @@ def scenario_run(request: Request, body: ScenarioIn):
     if data is not None:
         try:
             tail = data.prices.tail(24)
-            market_context["prices_tail"] = {
-                "index": [str(x) for x in tail.index],
-                "values": {c: [float(v) for v in tail[c].values] for c in tail.columns},
-            }
+            market_context["prices_tail"] = _to_prices_tail_payload(tail)
         except Exception:
             market_context["prices_tail"] = {}
 
@@ -1869,6 +2312,121 @@ def scenario_run(request: Request, body: ScenarioIn):
             "irreversible_loss_heatmap": irreversible_loss_heatmap,
             "decision_summary_line": decision_summary_line
         }
+
+
+# ----------------------------
+# NEW: Unified Scenario Endpoint (combines Classic + AI)
+# ----------------------------
+class UnifiedScenarioIn(BaseModel):
+    """Input for the unified scenario endpoint."""
+    decision_text: str = Field(..., min_length=3, max_length=400)
+    tax_country: str = Field(default="United States")
+    decision_type: str = Field(default="rebalance")
+    magnitude: int = Field(default=5)
+    mode: str = Field(default="Compounding Mode")
+    horizon_days: int = Field(default=30, ge=1, le=365)
+
+
+class UnifiedScenarioOut(BaseModel):
+    """Output from the unified scenario endpoint."""
+    ok: bool
+    
+    # Classic simulation results
+    classic: Dict[str, Any]
+    
+    # AI verdict (simplified for beginners)
+    ai_verdict: Dict[str, Any]
+
+
+@app.post("/api/v1/scenario/unified", response_model=UnifiedScenarioOut)
+def scenario_unified(request: Request, body: UnifiedScenarioIn):
+    """
+    Unified Scenario Simulation: Combines Classic analysis with AI Decision Intelligence.
+    
+    Returns both:
+    1. Classic simulation (detailed text-based analysis)
+    2. AI verdict (simplified score and recommendation)
+    """
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
+    portfolio = pitems[0]
+    
+    # Build ScenarioIn for classic simulation
+    classic_body = ScenarioIn(
+        decision_text=body.decision_text,
+        tax_country=body.tax_country,
+        decision_type=body.decision_type,
+        magnitude=body.magnitude,
+        mode=body.mode
+    )
+    
+    # Run classic simulation (reuse existing logic)
+    try:
+        # Create a mock request object to call scenario_run
+        classic_result = scenario_run(request, classic_body)
+    except HTTPException as e:
+        classic_result = {"ok": False, "error": str(e.detail)}
+    except Exception as e:
+        classic_result = {"ok": False, "error": str(e)}
+    
+    # Run AI Decision Intelligence
+    ai_verdict = {
+        "verdict": "neutral",
+        "composite_score": 50.0,
+        "summary": "Unable to analyze decision.",
+        "recommendation": "Review the decision details.",
+    }
+    
+    try:
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if decision.actions:
+            comparison, score, _, _ = run_decision_intelligence(
+                portfolio=portfolio,
+                decision=decision,
+                horizon_days=body.horizon_days,
+                n_paths=50,  # Use fewer paths for speed
+                include_paths=False
+            )
+            
+            # Simplify AI output for beginners
+            verdict_text = score.verdict.value.replace("_", " ").title()
+            
+            # Map verdict to beginner-friendly recommendation
+            if score.composite_score >= 70:
+                recommendation = "✅ This looks like a good decision for your portfolio."
+            elif score.composite_score >= 55:
+                recommendation = "👍 This decision seems reasonable, but monitor closely."
+            elif score.composite_score >= 45:
+                recommendation = "⚖️ This decision has mixed impacts. Consider your goals."
+            elif score.composite_score >= 30:
+                recommendation = "⚠️ This decision may increase your portfolio risk."
+            else:
+                recommendation = "🛑 Caution: This decision significantly increases risk."
+            
+            ai_verdict = {
+                "verdict": verdict_text,
+                "composite_score": round(score.composite_score, 1),
+                "summary": score.summary,
+                "recommendation": recommendation,
+                "delta_return": round(comparison.delta_return, 2),
+                "delta_volatility": round(comparison.delta_volatility, 2),
+                "key_factors": score.key_factors[:3],  # Top 3 factors
+                "warnings": score.warnings[:2],  # Top 2 warnings
+            }
+    except Exception as e:
+        ai_verdict["error"] = str(e)
+    
+    return UnifiedScenarioOut(
+        ok=True,
+        classic=classic_result if isinstance(classic_result, dict) else classic_result.dict(),
+        ai_verdict=ai_verdict,
+    )
 
 
 def validate_strict_output_contract_with_portfolio(
@@ -2077,22 +2635,11 @@ async def market_stream(request: Request, tickers: str):
             try:
                 if not tlist:
                     raise ValueError("No valid tickers provided")
-                data = fetch_prices(tlist, lookback_days=2, interval="1d")
-                tail = data.prices.tail(1)
-                if tail is not None and not tail.empty:
-                    payload = {c: float(tail[c].iloc[-1]) for c in tail.columns}
+                prices, _, w = _fetch_live_quotes(tlist)
+                payload = {k: float(v) for k, v in prices.items()}
+                warnings.extend(w[:5])
             except Exception as e:
                 warnings.append(str(e))
-                # try per-ticker fallback to provide partial data
-                for tk in tlist:
-                    try:
-                        d = fetch_prices([tk], lookback_days=2, interval="1d")
-                        ttail = d.prices.tail(1)
-                        if ttail is not None and not ttail.empty:
-                            col = ttail.columns[0]
-                            payload[tk] = float(ttail[col].iloc[-1])
-                    except Exception as e2:
-                        warnings.append(f"{tk}: {e2}")
             item = {"ts": int(time.time()), "prices": payload}
             if warnings:
                 item["warnings"] = warnings
@@ -2104,8 +2651,8 @@ async def market_stream(request: Request, tickers: str):
 
 @app.get("/api/v1/decisions/last")
 def decisions_last(request: Request):
-    actor = require_admin(request)
-    store = read_decisions(actor["sub"])
+    require_admin(request)
+    store = read_decisions()
     items = store.get("items", [])
     if not items:
         return {"ok": True, "decision": None}
@@ -2114,9 +2661,9 @@ def decisions_last(request: Request):
 
 @app.post("/api/v1/decisions/analyze", response_model=DecisionOut)
 def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
-    actor = require_admin(request)
+    require_admin(request)
 
-    pstore = read_portfolios(actor["sub"])
+    pstore = read_portfolios()
     items = pstore.get("items", [])
     if not items:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -2150,9 +2697,9 @@ def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
-    dstore = read_decisions(actor["sub"])
+    dstore = read_decisions()
     dstore["items"].insert(0, decision)
-    write_decisions(actor["sub"], dstore)
+    write_decisions(dstore)
 
     return decision
 
@@ -2160,7 +2707,7 @@ def decisions_analyze(request: Request, body: DecisionAnalyzeIn):
 # NEW: Canonical Decision Analysis Endpoint
 @app.post("/api/v1/decisions/canonical", response_model=CanonicalDecisionOut)
 def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
-    actor = require_admin(request)
+    require_admin(request)
 
     # Validate input using guardrails
     validation_result = INPUT_VALIDATOR.validate_decision_input(body.decision_text)
@@ -2169,7 +2716,7 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
         for violation in validation_result.violations:
             print(f"Guardrail violation detected: {violation}")
 
-    pstore = read_portfolios(actor["sub"])
+    pstore = read_portfolios()
     items = pstore.get("items", [])
     if not items:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
@@ -2177,7 +2724,8 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
     portfolio = items[0]
 
     # Get user profile to determine appropriate user type based on questionnaire
-    user_profile = get_user_profile(actor["sub"])
+    profile_store = read_profiles()
+    user_profile = profile_store.get("profiles", {}).get("admin")
 
     # Determine user type: use provided type or derive from questionnaire
     if body.user_type == UserType.RETAIL and user_profile and user_profile.get("level"):  # Only auto-assign if default was provided
@@ -2267,9 +2815,9 @@ def decisions_canonical(request: Request, body: DecisionAnalyzeIn):
         "created_at": real_life_decision.calculated_at,
     }
 
-    dstore = read_decisions(actor["sub"])
+    dstore = read_decisions()
     dstore["items"].insert(0, decision_record)
-    write_decisions(actor["sub"], dstore)
+    write_decisions(dstore)
 
     # Return the canonical decision output
     result = CanonicalDecisionOut(
@@ -2412,16 +2960,16 @@ def _build_tax_advice_items(
 
 @app.post("/api/v1/tax/advice", response_model=TaxAdviceOut)
 def tax_advice(request: Request, body: TaxAdviceIn):
-    actor = require_admin(request)
+    require_admin(request)
 
-    pstore = read_portfolios(actor["sub"])
+    pstore = read_portfolios()
     pitems = pstore.get("items", [])
     if not pitems:
         raise HTTPException(status_code=400, detail="No saved portfolio found. Save a portfolio first.")
     portfolio = pitems[0]
 
     # last decision is optional
-    dstore = read_decisions(actor["sub"])
+    dstore = read_decisions()
     ditems = dstore.get("items", [])
     decision = ditems[0] if ditems else None
 
@@ -2480,6 +3028,419 @@ def _sanitize_tickers(raw: List[str]) -> List[str]:
         out.append(s)
     return out
 
+
+def _httpx_get_json(url: str, timeout_s: float = 3.0) -> Optional[Dict[str, Any]]:
+    """Best-effort JSON getter with SSL-relaxed retry for hostile local cert chains."""
+    try:
+        r = httpx.get(url, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        try:
+            r = httpx.get(url, timeout=timeout_s, verify=False)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+
+def _to_twelve_symbol(raw_symbol: str) -> str:
+    """Convert common Yahoo-style suffixes into Twelve Data symbol format."""
+    s = (raw_symbol or "").strip().upper()
+    suffix_map = {
+        ".NS": ":NSE",
+        ".BO": ":BSE",
+        ".L": ":LSE",
+        ".TO": ":TSX",
+        ".HK": ":HKEX",
+    }
+    for k, v in suffix_map.items():
+        if s.endswith(k):
+            return f"{s[:-len(k)]}{v}"
+    return s
+
+
+def _to_twelve_symbols(raw_symbol: str) -> List[str]:
+    """Build Twelve Data symbol variants for better global hit rate."""
+    s = (raw_symbol or "").strip().upper()
+    if not s:
+        return []
+    variants: List[str] = []
+    is_indian = _is_indian_symbol(s)
+    if s.endswith(".NS"):
+        base = s[:-3]
+        variants.extend([f"{base}:NSE", base, s])
+    elif s.endswith(".BO"):
+        base = s[:-3]
+        variants.extend([f"{base}:BSE", base, s])
+    elif s.endswith(".L"):
+        base = s[:-2]
+        variants.extend([f"{base}:LSE", base, s])
+    elif s.endswith(".TO"):
+        base = s[:-3]
+        variants.extend([f"{base}:TSX", base, s])
+    elif s.endswith(".HK"):
+        base = s[:-3]
+        variants.extend([f"{base}:HKEX", base, s])
+    else:
+        variants.extend([s, _to_twelve_symbol(s)])
+        if is_indian:
+            variants.extend([f"{s}:NSE", f"{s}:BSE", f"{s}.NS", f"{s}.BO"])
+
+    seen = set()
+    out = []
+    for v in variants:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _from_twelve_symbol(td_symbol: str) -> str:
+    """Map Twelve Data exchange suffixes back to UI symbol convention."""
+    s = (td_symbol or "").strip().upper()
+    suffix_map = {
+        ":NSE": ".NS",
+        ":BSE": ".BO",
+        ":LSE": ".L",
+        ":TSX": ".TO",
+        ":HKEX": ".HK",
+    }
+    for k, v in suffix_map.items():
+        if s.endswith(k):
+            return f"{s[:-len(k)]}{v}"
+    return s
+
+
+def _twelve_get_json(path: str, params: Dict[str, Any], timeout_s: float = 5.0) -> Optional[Dict[str, Any]]:
+    if not TWELVE_DATA_API_KEY:
+        return None
+    q = dict(params or {})
+    q["apikey"] = TWELVE_DATA_API_KEY
+    url = f"https://api.twelvedata.com{path}"
+    try:
+        r = httpx.get(url, params=q, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+def _extract_td_price_currency(item: Dict[str, Any]) -> tuple[Optional[float], Optional[str]]:
+    candidates = [
+        item.get("price"),
+        item.get("close"),
+        item.get("previous_close"),
+        item.get("ask"),
+        item.get("bid"),
+    ]
+    price = next((float(v) for v in candidates if v is not None and str(v).replace(".", "", 1).replace("-", "", 1).isdigit()), None)
+    if price is None:
+        for v in candidates:
+            try:
+                fv = float(v)
+                if fv > 0:
+                    price = fv
+                    break
+            except Exception:
+                continue
+    if price is not None and price <= 0:
+        price = None
+    currency = item.get("currency") or item.get("currency_base")
+    ccy = str(currency).upper() if currency else None
+    if ccy and (len(ccy) != 3 or not ccy.isalpha()):
+        ccy = None
+    return price, ccy
+
+
+def _to_yf_symbols(symbol: str) -> List[str]:
+    """Build yfinance symbol variants, including Indian exchange suffixes."""
+    s = (symbol or "").strip().upper()
+    if not s:
+        return []
+    variants: List[str] = []
+    if s.endswith(".NS") or s.endswith(".BO"):
+        base = s.split(".")[0]
+        variants.extend([s, base])
+    elif "." in s:
+        variants.append(s)
+    else:
+        variants.append(s)
+        if _is_indian_symbol(s):
+            variants.extend([f"{s}.NS", f"{s}.BO"])
+    seen = set()
+    out = []
+    for v in variants:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _fetch_yfinance_live_quote(symbol: str) -> tuple[Optional[float], Optional[str]]:
+    """Fetch latest quote from yfinance for a single symbol with small variant probing."""
+    if yf is None:
+        return None, None
+    for cand in _to_yf_symbols(symbol):
+        try:
+            df = yf.download(
+                tickers=cand,
+                period="2d",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+                group_by="column",
+            )
+            if df is not None and not df.empty and "Close" in df.columns:
+                close = df["Close"].dropna()
+                if not close.empty:
+                    p = float(close.iloc[-1])
+                    if p > 0:
+                        ccy = _default_currency_for_symbol(cand)
+                        return p, ccy
+            tk = yf.Ticker(cand)
+            hist = tk.history(period="5d", interval="1d", auto_adjust=True)
+            if hist is not None and not hist.empty and "Close" in hist.columns:
+                close = hist["Close"].dropna()
+                if not close.empty:
+                    p = float(close.iloc[-1])
+                    if p > 0:
+                        ccy = _default_currency_for_symbol(cand)
+                        return p, ccy
+        except Exception:
+            continue
+    return None, None
+
+
+def _fetch_yahoo_live_quote(symbol: str) -> tuple[Optional[float], Optional[str]]:
+    """Fetch latest quote directly from Yahoo quote/chart endpoints with relaxed SSL retry."""
+    for cand in _to_yf_symbols(symbol):
+        quote_url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={quote_plus(cand)}"
+        qdata = _httpx_get_json(quote_url, timeout_s=4.0)
+        if isinstance(qdata, dict):
+            result = ((qdata.get("quoteResponse") or {}).get("result") or [])
+            for item in result:
+                sym = str(item.get("symbol", "")).upper()
+                if sym and sym != cand:
+                    continue
+                p = item.get("regularMarketPrice")
+                if isinstance(p, (int, float)) and float(p) > 0:
+                    ccy = str(item.get("currency", "")).upper() or _default_currency_for_symbol(cand)
+                    return float(p), ccy
+
+        chart_url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote_plus(cand)}"
+            f"?interval=1d&range=5d&includePrePost=false&events=div%2Csplits"
+        )
+        cdata = _httpx_get_json(chart_url, timeout_s=4.0)
+        try:
+            result = ((cdata or {}).get("chart", {}) or {}).get("result", [None])[0]
+            if result:
+                inds = result.get("indicators", {}) or {}
+                close = None
+                adj = inds.get("adjclose") or []
+                if adj and isinstance(adj[0], dict):
+                    close = adj[0].get("adjclose")
+                if close is None:
+                    quote = inds.get("quote") or []
+                    if quote and isinstance(quote[0], dict):
+                        close = quote[0].get("close")
+                if close:
+                    vals = [float(v) for v in close if isinstance(v, (int, float)) and float(v) > 0]
+                    if vals:
+                        meta_ccy = str((result.get("meta") or {}).get("currency", "")).upper()
+                        ccy = meta_ccy or _default_currency_for_symbol(cand)
+                        return float(vals[-1]), ccy
+        except Exception:
+            pass
+
+    return None, None
+
+
+def _default_currency_for_symbol(symbol: str) -> str:
+    s = (symbol or "").upper()
+    if s.endswith(".NS") or s.endswith(".BO"):
+        return "INR"
+    if s.endswith(".L"):
+        return "GBP"
+    if s.endswith(".TO"):
+        return "CAD"
+    if s.endswith(".HK"):
+        return "HKD"
+    return "USD"
+
+
+def _canonical_symbol_for_prices(symbol: str) -> str:
+    """Normalize known symbols to provider-friendly canonical forms."""
+    s = (symbol or "").strip().upper()
+    if not s:
+        return s
+    try:
+        info = ASSET_RESOLVER.resolve_asset(s)
+        if info and info.is_valid:
+            resolved = str(info.symbol or s).upper()
+            if info.country == "India" and "." not in resolved:
+                return f"{resolved}.NS"
+            return resolved
+    except Exception:
+        pass
+    return s
+
+
+def _is_indian_symbol(symbol: str) -> bool:
+    s = (symbol or "").strip().upper()
+    if s.endswith(".NS") or s.endswith(".BO"):
+        return True
+    try:
+        info = ASSET_RESOLVER.resolve_asset(s)
+        return bool(info and info.country == "India")
+    except Exception:
+        return False
+
+
+def _to_prices_tail_payload(df: pd.DataFrame) -> Dict[str, Any]:
+    """Serialize a price frame safely for JSON (no NaN/Inf)."""
+    values: Dict[str, List[Optional[float]]] = {}
+    if df is None or df.empty:
+        return {"index": [], "values": values}
+
+    for c in df.columns:
+        series: List[Optional[float]] = []
+        has_finite = False
+        for v in df[c].values:
+            try:
+                fv = float(v)
+            except Exception:
+                fv = float("nan")
+            if math.isfinite(fv):
+                series.append(fv)
+                has_finite = True
+            else:
+                series.append(None)
+        if has_finite:
+            values[str(c)] = series
+
+    return {"index": [str(x) for x in df.index], "values": values}
+
+
+def _fetch_live_quotes(tickers: List[str]) -> tuple[Dict[str, float], Dict[str, str], List[str]]:
+    """
+    Pull quotes from Twelve Data, then yfinance, then cached prices.
+    Returns prices, currencies, warnings.
+    """
+    symbols = [t.strip().upper() for t in tickers if t and t.strip()]
+    if not symbols:
+        return {}, {}, ["No symbols provided"]
+
+    warnings: List[str] = []
+    prices: Dict[str, float] = {}
+    currencies: Dict[str, str] = {}
+
+    # Hot cache first for snappy UI refreshes.
+    for s in symbols:
+        cached = _get_symbol_price_cache(s, _SYMBOL_PRICE_CACHE_FAST_AGE)
+        if cached:
+            prices[s] = float(cached["price"])
+            currencies[s] = str(cached.get("currency") or _default_currency_for_symbol(s))
+
+    # Provider 1: Twelve Data
+    if TWELVE_DATA_API_KEY:
+        td_variants = {s: _to_twelve_symbols(s) for s in symbols}
+        td_primary = {s: (v[0] if v else _to_twelve_symbol(s)) for s, v in td_variants.items()}
+        batch = _twelve_get_json("/quote", {"symbol": ",".join(td_primary.values())})
+        if batch:
+            if str(batch.get("status", "")).lower() == "error":
+                warnings.append(f"twelve_data_batch_error:{batch.get('message', 'unknown')}")
+            else:
+                parsed_count = 0
+                for req_sym, td_sym in td_primary.items():
+                    rec = batch.get(td_sym) or batch.get(req_sym) or batch.get(_from_twelve_symbol(td_sym))
+                    if isinstance(rec, dict):
+                        p, ccy = _extract_td_price_currency(rec)
+                        if p is not None:
+                            prices[req_sym] = p
+                            if ccy:
+                                currencies[req_sym] = ccy
+                            parsed_count += 1
+                if parsed_count == 0 and isinstance(batch, dict) and "symbol" in batch:
+                    rec_sym = str(batch.get("symbol", "")).upper()
+                    ui_sym = _from_twelve_symbol(rec_sym)
+                    p, ccy = _extract_td_price_currency(batch)
+                    if p is not None:
+                        back = next((k for k, v in td_primary.items() if v == rec_sym), ui_sym)
+                        prices[back] = p
+                        if ccy:
+                            currencies[back] = ccy
+        else:
+            warnings.append("twelve_data_batch_failed")
+
+        for req_sym, td_list in td_variants.items():
+            if req_sym in prices:
+                continue
+            got = False
+            for td_sym in td_list:
+                one = _twelve_get_json("/quote", {"symbol": td_sym})
+                if not one:
+                    continue
+                if str(one.get("status", "")).lower() == "error":
+                    continue
+                p, ccy = _extract_td_price_currency(one if isinstance(one, dict) else {})
+                if p is not None:
+                    prices[req_sym] = p
+                    if ccy:
+                        currencies[req_sym] = ccy
+                    got = True
+                    break
+            if not got:
+                warnings.append(f"twelve_data_symbol_failed:{req_sym}")
+    else:
+        warnings.append("twelve_data_not_configured")
+
+    # Provider 2: Direct Yahoo endpoints (quote/chart), avoids yfinance parser brittleness.
+    for req_sym in symbols:
+        if req_sym in prices:
+            continue
+        p, ccy = _fetch_yahoo_live_quote(req_sym)
+        if p is not None:
+            prices[req_sym] = p
+            currencies[req_sym] = ccy or currencies.get(req_sym, _default_currency_for_symbol(req_sym))
+            _set_symbol_price_cache(req_sym, p, currencies[req_sym], source="yahoo_direct")
+        else:
+            warnings.append(f"yahoo_direct_symbol_failed:{req_sym}")
+
+    # Provider 3: optional yfinance fallback (disabled by default for latency).
+    if ENABLE_YFINANCE_LIVE_FALLBACK:
+        for req_sym in symbols:
+            if req_sym in prices:
+                continue
+            p, ccy = _fetch_yfinance_live_quote(req_sym)
+            if p is not None:
+                prices[req_sym] = p
+                currencies[req_sym] = ccy or currencies.get(req_sym, _default_currency_for_symbol(req_sym))
+                _set_symbol_price_cache(req_sym, p, currencies[req_sym], source="yfinance")
+            else:
+                warnings.append(f"yfinance_symbol_failed:{req_sym}")
+
+    # Update cache for fresh values.
+    for s, p in prices.items():
+        if not _get_symbol_price_cache(s, max_age_seconds=2):
+            _set_symbol_price_cache(s, p, currencies.get(s, _default_currency_for_symbol(s)), source="twelve_or_yfinance")
+
+    # Final fallback: last cached value.
+    missing = [s for s in symbols if s not in prices]
+    for s in missing:
+        cached = _get_symbol_price_cache(s, _SYMBOL_PRICE_CACHE_MAX_STALE)
+        if cached:
+            prices[s] = float(cached["price"])
+            currencies[s] = str(cached.get("currency") or "USD")
+            age_sec = int(time.time() - float(cached.get("ts", 0)))
+            warnings.append(f"using_cached_price:{s}:age={age_sec}s")
+        elif s in prices and s not in currencies:
+            currencies[s] = _default_currency_for_symbol(s)
+
+    return prices, currencies, warnings
+
 @app.get("/api/v1/market/prices")
 def market_prices(
     request: Request,
@@ -2489,13 +3450,133 @@ def market_prices(
 ):
     require_admin(request)
     raw = [t for t in tickers.split(",")]
-    tlist = _sanitize_tickers(raw)
+    tlist = _sanitize_tickers([_canonical_symbol_for_prices(t) for t in raw])
     warnings: List[str] = []
+    
+    # Check in-memory cache first for instant response
+    cache_key = f"prices:{','.join(sorted(tlist))}:{lookback}:{interval}"
+    cached = _get_cached_prices(cache_key)
+    if cached is not None:
+        try:
+            rows = int((cached or {}).get("data", {}).get("rows_returned", 0))
+            # Don't serve stale empty responses; re-attempt upstream fetch.
+            if rows > 0:
+                cached_vals = ((cached or {}).get("data", {}).get("prices_tail", {}) or {}).get("values", {}) or {}
+                cached_symbols = {str(k).upper() for k in cached_vals.keys()}
+                requested_symbols = {str(t).upper() for t in tlist}
+                # Avoid serving partial cached responses that are missing requested symbols.
+                if requested_symbols.issubset(cached_symbols):
+                    return cached
+        except Exception:
+            return cached
+
+    # Indian/global symbols are more reliable via the broader fetch stack than
+    # the live-quote shortcut (which is US-focused and provider-sensitive).
+    if interval == "1d" and lookback <= 5 and tlist and any(_is_indian_symbol(t) for t in tlist):
+        try:
+            data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
+            tail = data.prices.tail(1)
+            if not tail.empty:
+                out = {
+                    "tickers": tlist,
+                    "interval": interval,
+                    "lookback_days": lookback,
+                    "rows_returned": int(tail.shape[0]),
+                    "source": f"direct_fallback:{getattr(data, 'source', 'unknown')}",
+                    "currencies": {t: _default_currency_for_symbol(t) for t in tlist},
+                    "prices_tail": _to_prices_tail_payload(tail),
+                }
+                result = {"ok": True, "data": out}
+                _set_cached_prices(cache_key, result)
+                return result
+        except Exception as e:
+            warnings.append(f"direct_fallback_failed:{e}")
+
+    # Fast path for UI quote refreshes: fetch live quotes directly.
+    if interval == "1d" and lookback <= 5 and tlist:
+        live_prices, live_ccy, live_diag = _fetch_live_quotes(tlist)
+        if live_prices:
+            # If only a subset resolved from live providers, backfill missing tickers
+            # via the broader historical fetch stack before returning.
+            missing = [t for t in tlist if t not in live_prices]
+            if missing:
+                try:
+                    fb_data = fetch_prices(missing, lookback_days=lookback, interval=interval, require_returns=False)
+                    fb_tail = fb_data.prices.tail(1)
+                    if not fb_tail.empty:
+                        for sym in fb_tail.columns:
+                            vals = fb_tail[sym].dropna()
+                            if not vals.empty:
+                                live_prices[sym] = float(vals.iloc[-1])
+                                live_ccy[sym] = _default_currency_for_symbol(sym)
+                        warnings.append(f"live_quote_partial_backfilled:{getattr(fb_data, 'source', 'unknown')}")
+                except Exception as e:
+                    warnings.append(f"live_quote_backfill_failed:{e}")
+
+            now = pd.Timestamp.utcnow().floor("s")
+            safe_live = {t: float(v) for t, v in live_prices.items() if _is_finite(v)}
+            out = {
+                "tickers": tlist,
+                "interval": interval,
+                "lookback_days": lookback,
+                "rows_returned": 1,
+                "source": "live_quote",
+                "currencies": {t: live_ccy.get(t, "USD") for t in tlist},
+                "prices_tail": {
+                    "index": [str(now)],
+                    "values": {t: [float(v)] for t, v in safe_live.items()},
+                },
+            }
+            missing = [t for t in tlist if t not in safe_live]
+            if missing:
+                out["warnings"] = [f"Missing live quote for: {', '.join(missing)}"] + warnings + live_diag[:5]
+            elif warnings:
+                out["warnings"] = warnings + live_diag[:5]
+            result = {"ok": True, "data": out}
+            if not missing:
+                _set_cached_prices(cache_key, result)
+            return result
+        else:
+            warnings.extend([f"live_quote_failed:{x}" for x in live_diag[:5]] if live_diag else ["live_quote_failed:no_diagnostics"])
+            # Fallback to the broader historical fetch stack (Yahoo chart/stooq/mock) for
+            # international symbols when live quote providers fail.
+            try:
+                fb_data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
+                fb_tail = fb_data.prices.tail(1)
+                if not fb_tail.empty:
+                    out = {
+                        "tickers": tlist,
+                        "interval": interval,
+                        "lookback_days": lookback,
+                        "rows_returned": int(fb_tail.shape[0]),
+                        "source": f"live_fallback:{getattr(fb_data, 'source', 'unknown')}",
+                        "currencies": {t: _default_currency_for_symbol(t) for t in tlist},
+                        "prices_tail": _to_prices_tail_payload(fb_tail),
+                        "warnings": warnings + ["Live quote provider failed; used historical fallback source."],
+                    }
+                    result = {"ok": True, "data": out}
+                    _set_cached_prices(cache_key, result)
+                    return result
+            except Exception as e:
+                warnings.append(f"live_fallback_failed:{e}")
+
+            out = {
+                "tickers": tlist,
+                "interval": interval,
+                "lookback_days": lookback,
+                "rows_returned": 0,
+                "source": "none",
+                "currencies": {t: "USD" for t in tlist},
+                "prices_tail": {"index": [], "values": {}},
+                "warnings": warnings + ["No live quote available from Twelve Data, yfinance, or fallback sources."],
+            }
+            return {"ok": True, "data": out}
+    
     data = None
     try:
         if not tlist:
             raise ValueError("No valid tickers provided after sanitization")
-        data = fetch_prices(tlist, lookback_days=lookback, interval=interval)
+        data = fetch_prices(tlist, lookback_days=lookback, interval=interval, require_returns=False)
     except Exception as e:
         warnings.append(str(e))
 
@@ -2505,25 +3586,53 @@ def market_prices(
             "interval": interval,
             "lookback_days": lookback,
             "rows_returned": 0,
+            "source": "none",
             "prices_tail": {"index": [], "values": {}},
             "warnings": warnings,
         }
-        return {"ok": True, "data": out}
+        result = {"ok": True, "data": out}
+        # Never cache empty/failed fetch results.
+        return result
 
     tail = data.prices.tail(25)
+    
+    # NEW: Resolve currencies for each ticker
+    currencies = {}
+    for t in tlist:
+        # Default to USD
+        currencies[t] = "USD"
+        try:
+            info = ASSET_RESOLVER.resolve_asset(t)
+            if info:
+                if info.country == "India":
+                    currencies[t] = "INR"
+                elif info.country == "USA":
+                    currencies[t] = "USD"
+                elif info.country == "Canada":
+                    currencies[t] = "CAD"
+                elif info.country == "UK" or info.country == "United Kingdom":
+                    currencies[t] = "GBP"
+                elif info.country in ["Germany", "France", "Italy", "Spain", "Netherlands"]:
+                    currencies[t] = "EUR"
+                # Add more mappings as needed
+        except Exception:
+            pass
+
     out = {
         "tickers": tlist,
         "interval": interval,
         "lookback_days": lookback,
         "rows_returned": int(tail.shape[0]),
-        "prices_tail": {
-            "index": [str(x) for x in tail.index],
-            "values": {c: [float(v) for v in tail[c].values] for c in tail.columns},
-        },
+        "source": getattr(data, "source", "unknown"),
+        "currencies": currencies, # NEW field
+        "prices_tail": _to_prices_tail_payload(tail),
     }
     if warnings:
         out["warnings"] = warnings
-    return {"ok": True, "data": out}
+    result = {"ok": True, "data": out}
+    if int(tail.shape[0]) > 0:
+        _set_cached_prices(cache_key, result)
+    return result
 
 
 def _is_finite(x: float) -> bool:
@@ -2634,11 +3743,7 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
         ppy = periods_per_year_from_interval(body.interval)
         m = portfolio_metrics(rets, weights, periods_per_year=ppy)
 
-        if (
-            not _is_finite(m["annualized_vol"])
-            or not _is_finite(m["max_drawdown"])
-            or not _is_finite(m["annualized_return"])
-        ):
+        if not _is_finite(m["annualized_vol"]) or not _is_finite(m["max_drawdown"]):
             raise HTTPException(
                 status_code=502,
                 detail={
@@ -2668,10 +3773,7 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
             "tickers": tlist,
             "lookback_days": body.lookback_days,
             "interval": body.interval,
-            "projection_horizon_years": body.projection_horizon_years,
             "annualized_vol": float(m["annualized_vol"]),
-            "projected_total_return": float((1.0 + m["annualized_return"]) ** body.projection_horizon_years - 1.0),
-            "projected_volatility": float(m["annualized_vol"] * math.sqrt(body.projection_horizon_years)),
             "max_drawdown": float(m["max_drawdown"]),
             "corr": {
                 "rows": tlist,
@@ -2687,14 +3789,402 @@ def portfolio_analyze(request: Request, body: AnalyzeIn):
                 "Max drawdown is computed on the portfolio index built from historical returns.",
             ],
         }
-        return {"ok": True, "analysis": out}
+        
+        # Generate Monte Carlo paths for all 4 time horizons using portfolio volatility
+        if body.include_paths:
+            try:
+                # Use the computed portfolio volatility from the output
+                annual_vol = out["annualized_vol"]  # Already a float
+                daily_vol = annual_vol / np.sqrt(252)  # Convert to daily
+                daily_drift = 0.0001  # Small positive drift (approx 2.5% annual)
+                
+                horizons = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}
+                all_horizon_paths = {}
+                n_paths = body.n_paths  # Use requested paths (default 1000)
+                initial_value = 100000.0
+                
+                for horizon_name, horizon_days in horizons.items():
+                    # Vectorized Monte Carlo Simulation
+                    # Generate all random returns at once: (n_paths, horizon_days)
+                    # This is much faster than looping
+                    daily_returns = np.random.normal(daily_drift, daily_vol, (n_paths, horizon_days))
+                    
+                    # Compute cumulative return factor for each path
+                    # (1 + r1) * (1 + r2) * ... 
+                    cum_returns = np.prod(1 + daily_returns, axis=1)
+                    
+                    # Compute terminal values
+                    terminal_values = initial_value * cum_returns
+                    
+                    # Compute terminal returns percentage
+                    path_returns = (terminal_values - initial_value) / initial_value * 100
+                    
+                    # Calculate statistics on the array
+                    all_horizon_paths[horizon_name] = {
+                        "horizon_days": int(horizon_days),
+                        "n_paths": int(n_paths),
+                        "best_case": float(np.max(path_returns)),
+                        "worst_case": float(np.min(path_returns)),
+                        "median": float(np.median(path_returns))
+                    }
+                
+                simulation_paths = all_horizon_paths
+                    
+            except Exception as e:
+                import traceback
+                out["path_generation_error"] = str(e)
+        
+        result = {"ok": True, "analysis": out}
+        if simulation_paths:
+            result["simulation_paths"] = simulation_paths
+        return result
+
     except HTTPException:
         # re-raise FastAPI HTTPExceptions unchanged
         raise
     except Exception as e:
+        import traceback
         tb = traceback.format_exc()
         # return structured 502 to avoid 500 stacktrace leak
         raise HTTPException(
             status_code=502,
             detail={"error": "Internal analysis error", "message": str(e), "trace": tb},
         )
+
+
+# ----------------------------
+# NEW: Decision Intelligence Endpoint
+# ----------------------------
+@app.post("/api/v1/decision/evaluate", response_model=DecisionIntelligenceOut)
+def evaluate_decision(request: Request, body: DecisionIntelligenceIn):
+    """
+    Evaluate a natural language decision using the Decision Intelligence Architecture.
+    
+    This endpoint:
+    1. Parses the natural language decision into a StructuredDecision
+    2. Runs Monte Carlo simulation to compare baseline vs. scenario
+    3. Returns counterfactual comparison and decision verdict
+    
+    Example inputs:
+    - "Short Apple 4% after 3 days"
+    - "Buy NVDA 20%"
+    - "Reduce tech exposure"
+    """
+    import traceback
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(
+            status_code=400, 
+            detail="No saved portfolio found. Save a portfolio first."
+        )
+    portfolio = pitems[0]
+    
+    try:
+        # 1. Parse the decision using Intent Parser
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if not decision.actions:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Could not parse decision",
+                    "message": "No actionable items found in the decision text.",
+                    "warnings": decision.warnings,
+                }
+            )
+        
+        # 2. Run temporal simulation
+        comparison, score, baseline_paths, scenario_paths = run_decision_intelligence(
+            portfolio=portfolio,
+            decision=decision,
+            horizon_days=body.horizon_days,
+            n_paths=body.n_paths,
+            return_paths=body.include_paths
+        )
+        
+        # 3. Build response
+        parsed_actions = []
+        for action in decision.actions:
+            parsed_actions.append({
+                "symbol": action.symbol,
+                "direction": getattr(action.direction, 'value', str(action.direction)),
+                "size_percent": action.size_percent,
+                "size_usd": action.size_usd,
+                "timing_type": getattr(action.timing.type, 'value', str(action.timing.type)),
+                "delay_days": action.timing.delay_days,
+            })
+        
+        # 4. Build visualization data
+        visualization_data = {
+            "comparison_chart": {
+                "type": "bar",
+                "labels": ["Expected Return", "Volatility", "Max Drawdown"],
+                "baseline": [
+                    comparison.baseline_expected_return,
+                    comparison.baseline_volatility,
+                    comparison.baseline_max_drawdown
+                ],
+                "scenario": [
+                    comparison.scenario_expected_return,
+                    comparison.scenario_volatility,
+                    comparison.scenario_max_drawdown
+                ],
+            },
+            "score_breakdown": {
+                "type": "radar",
+                "labels": ["Return", "Risk", "Tail Risk", "Drawdown", "Efficiency", "Stability"],
+                "values": [
+                    score.return_score,
+                    score.risk_score,
+                    score.tail_risk_score,
+                    score.drawdown_score,
+                    score.capital_efficiency_score,
+                    score.stability_score,
+                ],
+            },
+            "verdict_gauge": {
+                "value": score.composite_score,
+                "verdict": score.verdict.value,
+            },
+        }
+        
+        # 5. Serialize simulation paths if requested
+        serialized_paths = None
+        if body.include_paths and baseline_paths and scenario_paths:
+            # Serialize paths for frontend visualization
+            # Each path contains a list of states with portfolio values over time
+            def serialize_path(path):
+                return {
+                    "path_id": path.path_id,
+                    "terminal_return_pct": round(path.terminal_return_pct, 2),
+                    "max_drawdown_pct": round(path.max_drawdown_pct, 2),
+                    "values": [round(s.portfolio_value, 2) for s in path.states],
+                    "days": [s.day_offset for s in path.states],
+                }
+            
+            serialized_paths = {
+                "horizon_days": body.horizon_days,
+                "n_paths": body.n_paths,
+                "baseline": [serialize_path(p) for p in baseline_paths],
+                "scenario": [serialize_path(p) for p in scenario_paths],
+            }
+        
+        return DecisionIntelligenceOut(
+            ok=True,
+            decision_id=decision.decision_id,
+            decision_type=decision.decision_type.value,
+            parsed_actions=parsed_actions,
+            confidence_score=decision.confidence_score,
+            parser_warnings=decision.warnings,
+            
+            baseline_expected_return=round(comparison.baseline_expected_return, 2),
+            baseline_volatility=round(comparison.baseline_volatility, 2),
+            baseline_max_drawdown=round(comparison.baseline_max_drawdown, 2),
+            
+            scenario_expected_return=round(comparison.scenario_expected_return, 2),
+            scenario_volatility=round(comparison.scenario_volatility, 2),
+            scenario_max_drawdown=round(comparison.scenario_max_drawdown, 2),
+            
+            delta_return=round(comparison.delta_return, 2),
+            delta_volatility=round(comparison.delta_volatility, 2),
+            delta_drawdown=round(comparison.delta_drawdown, 2),
+            
+            verdict=score.verdict.value,
+            composite_score=round(score.composite_score, 1),
+            summary=score.summary,
+            key_factors=score.key_factors,
+            warnings=score.warnings + decision.warnings,
+            
+            visualization_data=visualization_data,
+            simulation_paths=serialized_paths,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Decision evaluation failed",
+                "message": str(e),
+                "trace": tb,
+            }
+        )
+
+
+# ----------------------------
+# NEW: Fast Decision Evaluation Endpoint (Tier 1)
+# ----------------------------
+@app.post("/api/v1/decision/evaluate/fast", response_model=DecisionIntelligenceOut)
+def evaluate_decision_fast(request: Request, body: DecisionIntelligenceIn):
+    """
+    TIER 1: Fast decision evaluation (~50ms).
+    
+    Uses mean-field approximation for instant results.
+    Good for immediate UX feedback before deep simulation.
+    
+    Returns lower confidence results - use /evaluate for full Monte Carlo.
+    """
+    import traceback
+    require_admin(request)
+    
+    # Load portfolio
+    pstore = read_portfolios()
+    pitems = pstore.get("items", [])
+    if not pitems:
+        raise HTTPException(
+            status_code=400, 
+            detail="No saved portfolio found. Save a portfolio first."
+        )
+    portfolio = pitems[0]
+    portfolio_id = portfolio.get("id", "unknown")
+    
+    try:
+        # Check cache first
+        cached = get_cached_result(
+            decision_text=body.decision_text,
+            portfolio_id=portfolio_id,
+            horizon_days=body.horizon_days,
+            is_fast=True
+        )
+        
+        if cached:
+            # Return cached result
+            cached["ok"] = True
+            cached["_cached"] = True
+            return DecisionIntelligenceOut(**cached)
+        
+        # Parse the decision
+        decision = parse_decision(body.decision_text, portfolio)
+        
+        if not decision.actions:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Could not parse decision",
+                    "message": "No actionable items found in the decision text.",
+                    "warnings": decision.warnings,
+                }
+            )
+        
+        # Run fast approximation (Tier 1)
+        comparison, score = run_decision_intelligence_fast(
+            portfolio=portfolio,
+            decision=decision,
+            horizon_days=body.horizon_days
+        )
+        
+        # Build response
+        parsed_actions = []
+        for action in decision.actions:
+            parsed_actions.append({
+                "symbol": action.symbol,
+                "direction": getattr(action.direction, 'value', str(action.direction)),
+                "size_percent": action.size_percent,
+                "size_usd": action.size_usd,
+                "timing_type": getattr(action.timing.type, 'value', str(action.timing.type)),
+                "delay_days": action.timing.delay_days,
+            })
+        
+        # Build visualization data
+        visualization_data = {
+            "comparison_chart": {
+                "type": "bar",
+                "labels": ["Expected Return", "Volatility", "Max Drawdown"],
+                "baseline": [
+                    comparison.baseline_expected_return,
+                    comparison.baseline_volatility,
+                    comparison.baseline_max_drawdown
+                ],
+                "scenario": [
+                    comparison.scenario_expected_return,
+                    comparison.scenario_volatility,
+                    comparison.scenario_max_drawdown
+                ],
+            },
+            "score_breakdown": {
+                "type": "radar",
+                "labels": ["Return", "Risk", "Tail Risk", "Drawdown", "Efficiency", "Stability"],
+                "values": [
+                    score.return_score,
+                    score.risk_score,
+                    score.tail_risk_score,
+                    score.drawdown_score,
+                    score.capital_efficiency_score,
+                    score.stability_score,
+                ],
+            },
+            "verdict_gauge": {
+                "value": score.composite_score,
+                "verdict": score.verdict.value,
+            },
+            "is_fast_approximation": True,
+        }
+        
+        result_dict = {
+            "ok": True,
+            "decision_id": decision.decision_id,
+            "decision_type": decision.decision_type.value,
+            "parsed_actions": parsed_actions,
+            "confidence_score": decision.confidence_score,
+            "parser_warnings": decision.warnings,
+            
+            "baseline_expected_return": round(comparison.baseline_expected_return, 2),
+            "baseline_volatility": round(comparison.baseline_volatility, 2),
+            "baseline_max_drawdown": round(comparison.baseline_max_drawdown, 2),
+            
+            "scenario_expected_return": round(comparison.scenario_expected_return, 2),
+            "scenario_volatility": round(comparison.scenario_volatility, 2),
+            "scenario_max_drawdown": round(comparison.scenario_max_drawdown, 2),
+            
+            "delta_return": round(comparison.delta_return, 2),
+            "delta_volatility": round(comparison.delta_volatility, 2),
+            "delta_drawdown": round(comparison.delta_drawdown, 2),
+            
+            "verdict": score.verdict.value,
+            "composite_score": round(score.composite_score, 1),
+            "summary": score.summary,
+            "key_factors": score.key_factors,
+            "warnings": score.warnings + decision.warnings,
+            
+            "visualization_data": visualization_data,
+        }
+        
+        # Cache the result
+        set_cached_result(
+            decision_text=body.decision_text,
+            portfolio_id=portfolio_id,
+            horizon_days=body.horizon_days,
+            result=result_dict,
+            is_fast=True
+        )
+        
+        return DecisionIntelligenceOut(**result_dict)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Fast decision evaluation failed",
+                "message": str(e),
+                "trace": tb,
+            }
+        )
+
+
+# ----------------------------
+# Cache Statistics Endpoint
+# ----------------------------
+@app.get("/api/v1/decision/cache/stats")
+def decision_cache_stats(request: Request):
+    """Get decision cache statistics."""
+    require_admin(request)
+    return get_cache_stats()

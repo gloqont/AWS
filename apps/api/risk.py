@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 import time
 import hashlib
+import json
+from io import StringIO
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple
+from urllib.parse import quote_plus
 
 import numpy as np
 import pandas as pd
@@ -13,6 +16,11 @@ try:
     import yfinance as yf
 except Exception:
     yf = None
+
+try:
+    import httpx
+except Exception:
+    httpx = None
 
 
 Interval = Literal["1m", "1d", "1wk", "1mo"]
@@ -68,6 +76,38 @@ def _write_cache(df: pd.DataFrame, path: str, use_parquet: bool) -> None:
     except Exception:
         # caching should never crash the API
         pass
+
+
+def _httpx_get_json_relaxed(url: str, timeout_s: float = 8.0) -> Optional[dict]:
+    if httpx is None:
+        return None
+    try:
+        r = httpx.get(url, timeout=timeout_s)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        try:
+            r = httpx.get(url, timeout=timeout_s, verify=False)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+
+def _httpx_get_text_relaxed(url: str, timeout_s: float = 8.0) -> Optional[str]:
+    if httpx is None:
+        return None
+    try:
+        r = httpx.get(url, timeout=timeout_s)
+        r.raise_for_status()
+        return r.text
+    except Exception:
+        try:
+            r = httpx.get(url, timeout=timeout_s, verify=False)
+            r.raise_for_status()
+            return r.text
+        except Exception:
+            return None
 
 
 # -------------------------
@@ -234,7 +274,9 @@ def _fetch_mock_indian_prices(tickers: List[str], lookback_days: int, interval: 
         else:
             # Check if it's a potential Indian ticker (ends with .NS or .BO, or is in common Indian list)
             ticker_clean = ticker.replace('.NS', '').replace('.BO', '').upper()
-            if ticker_clean in [t.replace('.NS', '').replace('.BO', '').upper() for t in mock_prices_db.keys()]:
+            known_indian = ticker_clean in [t.replace('.NS', '').replace('.BO', '').upper() for t in mock_prices_db.keys()]
+            is_indian_suffix = ticker_upper.endswith('.NS') or ticker_upper.endswith('.BO')
+            if known_indian or is_indian_suffix:
                 # Even if not in our DB, try to create a generic mock
                 # Use a default price if we can't find a specific one
                 base_price = 1000.0  # Default mock price
@@ -274,10 +316,18 @@ def _fetch_stooq_prices(tickers: List[str], lookback_days: int, interval: Interv
         url = f"https://stooq.com/q/d/l/?s={sym}&i={i}"
 
         # stooq returns: Date,Open,High,Low,Close,Volume
+        df = None
         try:
             df = pd.read_csv(url)
-        except Exception as e:
-            raise RuntimeError(f"Stooq fetch failed for {t}: {e}")
+        except Exception:
+            text = _httpx_get_text_relaxed(url, timeout_s=8.0)
+            if text:
+                try:
+                    df = pd.read_csv(StringIO(text))
+                except Exception:
+                    df = None
+        if df is None:
+            raise RuntimeError(f"Stooq fetch failed for {t}: unable to download/parse CSV")
 
         if df.empty or "Date" not in df.columns or "Close" not in df.columns:
             continue
@@ -301,234 +351,280 @@ def _fetch_stooq_prices(tickers: List[str], lookback_days: int, interval: Interv
     return prices
 
 
+def _yahoo_range_from_lookback(lookback_days: int) -> str:
+    if lookback_days <= 1:
+        return "1d"
+    if lookback_days <= 5:
+        return "5d"
+    if lookback_days <= 30:
+        return "1mo"
+    if lookback_days <= 90:
+        return "3mo"
+    if lookback_days <= 180:
+        return "6mo"
+    if lookback_days <= 365:
+        return "1y"
+    if lookback_days <= 730:
+        return "2y"
+    if lookback_days <= 1825:
+        return "5y"
+    return "max"
+
+
+def _fetch_yahoo_chart_prices(tickers: List[str], lookback_days: int, interval: Interval) -> pd.DataFrame:
+    """Direct Yahoo chart API fallback that does not rely on yfinance internals."""
+    if interval not in ("1d", "1wk", "1mo"):
+        # Keep this fallback simple and stable for the intervals we use in UI/API.
+        return pd.DataFrame()
+
+    range_str = _yahoo_range_from_lookback(int(lookback_days))
+    frames = []
+
+    for ticker in tickers:
+        symbol = (ticker or "").strip().upper()
+        if not symbol:
+            continue
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote_plus(symbol)}"
+            f"?interval={interval}&range={range_str}&includePrePost=false&events=div%2Csplits"
+        )
+        try:
+            payload = _httpx_get_json_relaxed(url, timeout_s=8.0)
+            if not payload:
+                continue
+
+            result = (
+                payload.get("chart", {})
+                .get("result", [None])[0]
+            )
+            if not result:
+                continue
+
+            ts = result.get("timestamp") or []
+            indicators = result.get("indicators", {})
+            close = None
+            adj_list = indicators.get("adjclose") or []
+            if adj_list and isinstance(adj_list[0], dict):
+                close = adj_list[0].get("adjclose")
+            if close is None:
+                quote = indicators.get("quote") or []
+                if quote and isinstance(quote[0], dict):
+                    close = quote[0].get("close")
+
+            if not ts or not close:
+                continue
+
+            # Align lengths defensively and drop null prices.
+            n = min(len(ts), len(close))
+            idx = pd.to_datetime(ts[:n], unit="s")
+            vals = pd.Series(close[:n], index=idx).dropna()
+            if vals.empty:
+                continue
+
+            frames.append(vals.to_frame(name=symbol))
+        except Exception:
+            continue
+
+    if not frames:
+        return pd.DataFrame()
+
+    prices = pd.concat(frames, axis=1).sort_index()
+    if lookback_days and lookback_days > 0:
+        cutoff = prices.index.max() - pd.Timedelta(days=int(lookback_days))
+        prices = prices.loc[prices.index >= cutoff]
+    return prices
+
+
+def _fetch_yahoo_search_prices(tickers: List[str]) -> pd.DataFrame:
+    """Last-resort latest-price fallback using Yahoo search regularMarketPrice."""
+    if httpx is None:
+        return pd.DataFrame()
+
+    now = pd.Timestamp.utcnow().floor("s")
+    row = {}
+
+    for ticker in tickers:
+        symbol = (ticker or "").strip().upper()
+        if not symbol:
+            continue
+        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={quote_plus(symbol)}&quotesCount=10&newsCount=0"
+        try:
+            data = _httpx_get_json_relaxed(url, timeout_s=3.5)
+            if not data:
+                continue
+            quotes = data.get("quotes", [])
+            price = None
+
+            # Prefer exact symbol match first.
+            for item in quotes:
+                sym = str(item.get("symbol", "")).upper()
+                p = item.get("regularMarketPrice")
+                if sym == symbol and isinstance(p, (int, float)):
+                    price = float(p)
+                    break
+
+            # Fallback: first quote with numeric regularMarketPrice.
+            if price is None:
+                for item in quotes:
+                    p = item.get("regularMarketPrice")
+                    if isinstance(p, (int, float)):
+                        price = float(p)
+                        break
+
+            if price is not None and price > 0:
+                row[symbol] = price
+        except Exception:
+            continue
+
+    if not row:
+        return pd.DataFrame()
+    return pd.DataFrame([row], index=[now]).sort_index()
+
+
+def _fetch_yahoo_quote_prices(tickers: List[str]) -> pd.DataFrame:
+    """Fetch latest quotes from Yahoo quote endpoint for exact symbols."""
+    if httpx is None:
+        return pd.DataFrame()
+    symbols = [((t or "").strip().upper()) for t in tickers if (t or "").strip()]
+    if not symbols:
+        return pd.DataFrame()
+
+    url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={quote_plus(','.join(symbols))}"
+    data = _httpx_get_json_relaxed(url, timeout_s=3.5)
+    if not data:
+        return pd.DataFrame()
+
+    result = (data.get("quoteResponse", {}) or {}).get("result", []) or []
+    if not result:
+        return pd.DataFrame()
+
+    row = {}
+    for item in result:
+        sym = str(item.get("symbol", "")).upper()
+        if not sym:
+            continue
+        price = item.get("regularMarketPrice")
+        if not isinstance(price, (int, float)):
+            # degrade gracefully to another numeric field if needed
+            price = item.get("regularMarketPreviousClose")
+        if isinstance(price, (int, float)) and float(price) > 0:
+            row[sym] = float(price)
+
+    if not row:
+        return pd.DataFrame()
+
+    now = pd.Timestamp.utcnow().floor("s")
+    return pd.DataFrame([row], index=[now]).sort_index()
+
+
 # -------------------------
 # Data source: yfinance (primary) - OPTIMIZED VERSION
 # -------------------------
 def _fetch_yfinance_prices(tickers: List[str], lookback_days: int, interval: Interval) -> pd.DataFrame:
     if yf is None:
         raise RuntimeError("yfinance is not installed or failed to import")
+    indian_no_suffix = {
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "BHARTIARTL", "ITC",
+        "ASIANPAINT", "MARUTI", "AXISBANK", "SUNPHARMA", "TATAMOTORS", "TATASTEEL",
+        "POWERGRID", "ONGC", "COALINDIA", "GRASIM", "ULTRACEMCO", "NESTLEIND", "TITAN",
+        "HINDUNILVR", "WIPRO", "BAJFINANCE", "BAJAJFINSV", "KOTAKBANK", "JSWSTEEL",
+        "DRREDDY", "HDFC", "BRITANNIA", "CIPLA", "EICHERMOT", "HCLTECH", "INDUSINDBK",
+        "IOC", "M&M", "TECHM", "VEDL", "YESBANK", "ZEEL",
+    }
 
-    # Prepare ticker list with international suffixes as needed
-    processed_tickers = []
-    ticker_mapping = {}  # Maps processed ticker back to original
+    def to_provider_symbol(t: str) -> str:
+        s = (t or "").strip().upper()
+        if "." not in s and s in indian_no_suffix:
+            return f"{s}.NS"
+        return s
 
-    for ticker in tickers:
-        ticker_to_use = ticker
-        # For Indian tickers, try with .NS suffix if no suffix is provided
-        if '.' not in ticker and ticker.upper() in ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK',
-                                                  'SBIN', 'BHARTIARTL', 'ITC', 'ASIANPAINT', 'MARUTI',
-                                                  'AXISBANK', 'SUNPHARMA', 'TATAMOTORS', 'TATASTEEL',
-                                                  'POWERGRID', 'ONGC', 'COALINDIA', 'GRASIM', 'ULTRACEMCO',
-                                                  'NESTLEIND', 'TITAN', 'HINDUNILVR', 'WIPRO', 'BAJFINANCE',
-                                                  'BAJAJFINSV', 'KOTAKBANK', 'JSWSTEEL', 'DRREDDY', 'HDFC',
-                                                  'BRITANNIA', 'CIPLA', 'EICHERMOT', 'GODREJPROP', 'HCLTECH',
-                                                  'INDUSINDBK', 'IOC', 'M&M', 'MINDTREE', 'MUTHOOTFIN',
-                                                  'NAUKRI', 'NEULANDLAB', 'OFSS', 'PIIND', 'POLYCAB',
-                                                  'RAINBOW', 'RAJESHEXPO', 'RBLBANK', 'RECLTD', 'REDINGTON',
-                                                  'SAIL', 'SANOFI', 'SBILIFE', 'SHOPERSTOP', 'SHREECEM',
-                                                  'SRF', 'SUDOCHEM', 'SUMICHEM', 'SUNTV', 'SYNGENE',
-                                                  'TATACHEM', 'TATACONSUM', 'TATACORP', 'TATAELXSI', 'TATAGLOBAL',
-                                                  'TATAINVEST', 'TATAMETALI', 'TATAPOWER', 'TATASPONGE', 'TCS',
-                                                  'TECHM', 'RAMCOCEM', 'UBL', 'VEDL', 'VGUARD',
-                                                  'VOLTAS', 'WHIRLPOOL', 'WOCKPHARMA', 'YESBANK', 'ZEEL']:
-            ticker_to_use = f"{ticker}.NS"
+    def extract_close(df: pd.DataFrame, expected_symbol: str) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            lvl0 = df.columns.get_level_values(0)
+            if "Close" in lvl0:
+                out = df["Close"].copy()
+            elif "Adj Close" in lvl0:
+                out = df["Adj Close"].copy()
+            else:
+                out = df[df.columns[0]].copy()
+            if isinstance(out, pd.Series):
+                out = out.to_frame(name=expected_symbol)
+            return out
+        if "Close" in df.columns:
+            return df[["Close"]].rename(columns={"Close": expected_symbol})
+        if "Adj Close" in df.columns:
+            return df[["Adj Close"]].rename(columns={"Adj Close": expected_symbol})
+        out = df.iloc[:, [0]].copy()
+        out.columns = [expected_symbol]
+        return out
 
-        processed_tickers.append(ticker_to_use)
-        ticker_mapping[ticker_to_use] = ticker  # Map processed back to original
-
-    # Bulk fetch all tickers in a single yfinance call - this is the key optimization
     period = f"{int(lookback_days)}d"
+    provider_symbols = [to_provider_symbol(t) for t in tickers]
+    provider_to_original = dict(zip(provider_symbols, tickers))
+    frames: List[pd.DataFrame] = []
 
+    # Batch download first.
     try:
-        # Fetch all tickers at once - much faster than individual requests
-        all_data = yf.download(
-            tickers=processed_tickers,
+        bulk = yf.download(
+            tickers=provider_symbols,
             period=period,
             interval=interval,
             auto_adjust=True,
             progress=False,
-            threads=True,  # Enable threading for internal processing
+            threads=True,
             group_by="column",
         )
-
-        if all_data is None or all_data.empty:
-            return pd.DataFrame()
-
-        # Process the multi-index DataFrame to extract closing prices
-        if isinstance(all_data.columns, pd.MultiIndex):
-            # Multi-index case: (Attribute, Ticker)
-            close_data = None
-
-            # Try to get Close prices first
-            if "Close" in all_data.columns.get_level_values(0):
-                close_data = all_data["Close"].copy()
-            elif "Adj Close" in all_data.columns.get_level_values(0):
-                close_data = all_data["Adj Close"].copy()
-            else:
-                # fallback: use first available attribute
-                first_attr = all_data.columns.get_level_values(0)[0]
-                close_data = all_data[first_attr].copy()
-
-            # Rename columns back to original tickers (without .NS suffix if it was added)
-            renamed_cols = {}
-            for col in close_data.columns:
-                original_ticker = ticker_mapping.get(col, col)
-                renamed_cols[col] = original_ticker
-            close_data.rename(columns=renamed_cols, inplace=True)
-        else:
-            # Single index case - this shouldn't happen with multiple tickers but handle it
-            if "Close" in all_data.columns:
-                close_data = all_data[["Close"]].copy()
-                close_data.columns = [ticker_mapping.get("Close", "Close")]
-            elif "Adj Close" in all_data.columns:
-                close_data = all_data[["Adj Close"]].copy()
-                close_data.columns = [ticker_mapping.get("Adj Close", "Adj Close")]
-            else:
-                close_data = all_data.iloc[:, [0]].copy()
-                close_data.columns = [ticker_mapping.get(close_data.columns[0], close_data.columns[0])]
-
-        # Return the processed data
-        return close_data.sort_index()
-
+        close_bulk = extract_close(bulk, provider_symbols[0] if provider_symbols else "")
+        if not close_bulk.empty:
+            renamed = {}
+            for c in close_bulk.columns:
+                renamed[c] = provider_to_original.get(str(c), provider_to_original.get(str(c).upper(), str(c)))
+            close_bulk = close_bulk.rename(columns=renamed)
+            close_bulk = close_bulk.loc[:, ~close_bulk.columns.duplicated(keep="first")]
+            frames.append(close_bulk)
     except Exception as e:
-        print(f"Warning: Bulk yfinance fetch failed, falling back to individual fetch: {e}")
-        # Fallback to original method if bulk fetch fails
-        all_prices = {}
-        successful_tickers = []
+        print(f"Warning: Bulk yfinance fetch failed: {e}")
 
-        for ticker in tickers:
-            try:
-                # For Indian tickers, try with .NS suffix if no suffix is provided
-                ticker_to_use = ticker
-                if '.' not in ticker and ticker.upper() in ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK',
-                                                          'SBIN', 'BHARTIARTL', 'ITC', 'ASIANPAINT', 'MARUTI',
-                                                          'AXISBANK', 'SUNPHARMA', 'TATAMOTORS', 'TATASTEEL',
-                                                          'POWERGRID', 'ONGC', 'COALINDIA', 'GRASIM', 'ULTRACEMCO',
-                                                          'NESTLEIND', 'TITAN', 'HINDUNILVR', 'WIPRO', 'BAJFINANCE',
-                                                          'BAJAJFINSV', 'KOTAKBANK', 'JSWSTEEL', 'DRREDDY', 'HDFC',
-                                                          'BRITANNIA', 'CIPLA', 'EICHERMOT', 'GODREJPROP', 'HCLTECH',
-                                                          'INDUSINDBK', 'IOC', 'M&M', 'MINDTREE', 'MUTHOOTFIN',
-                                                          'NAUKRI', 'NEULANDLAB', 'OFSS', 'PIIND', 'POLYCAB',
-                                                          'RAINBOW', 'RAJESHEXPO', 'RBLBANK', 'RECLTD', 'REDINGTON',
-                                                          'SAIL', 'SANOFI', 'SBILIFE', 'SHOPERSTOP', 'SHREECEM',
-                                                          'SRF', 'SUDOCHEM', 'SUMICHEM', 'SUNTV', 'SYNGENE',
-                                                          'TATACHEM', 'TATACONSUM', 'TATACORP', 'TATAELXSI', 'TATAGLOBAL',
-                                                          'TATAINVEST', 'TATAMETALI', 'TATAPOWER', 'TATASPONGE', 'TCS',
-                                                          'TECHM', 'RAMCOCEM', 'UBL', 'VEDL', 'VGUARD',
-                                                          'VOLTAS', 'WHIRLPOOL', 'WOCKPHARMA', 'YESBANK', 'ZEEL']:
-                    ticker_to_use = f"{ticker}.NS"
+    fetched = set()
+    if frames:
+        fetched.update([c for c in frames[0].columns if isinstance(c, str)])
 
-                # Download data for single ticker to ensure proper handling of international suffixes
-                period = f"{int(lookback_days)}d"
-                ticker_data = yf.download(
-                    tickers=[ticker_to_use],
-                    period=period,
-                    interval=interval,
-                    auto_adjust=True,
-                    progress=False,
-                    threads=False,
-                    group_by="column",
-                )
+    # Deterministic per-ticker fallback.
+    for original, provider_symbol in zip(tickers, provider_symbols):
+        if original in fetched:
+            continue
+        try:
+            single = yf.download(
+                tickers=provider_symbol,
+                period=period,
+                interval=interval,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+                group_by="column",
+            )
+            close_single = extract_close(single, original)
+            if close_single.empty:
+                tk = yf.Ticker(provider_symbol)
+                hist = tk.history(period=period, interval=interval, auto_adjust=True)
+                close_single = extract_close(hist, original)
+            if not close_single.empty:
+                close_single = close_single.rename(columns={provider_symbol: original})
+                frames.append(close_single[[original]])
+                fetched.add(original)
+        except Exception as e:
+            print(f"Warning: Individual yfinance fetch failed for {original}: {e}")
 
-                if ticker_data is not None and not ticker_data.empty:
-                    # Extract closing prices
-                    if isinstance(ticker_data.columns, pd.MultiIndex):
-                        if "Close" in ticker_data.columns.get_level_values(0):
-                            close_data = ticker_data["Close"].copy()
-                        elif "Adj Close" in ticker_data.columns.get_level_values(0):
-                            close_data = ticker_data["Adj Close"].copy()
-                        else:
-                            # fallback: use first available column
-                            first_col = ticker_data.columns.get_level_values(0)[0]
-                            close_data = ticker_data[first_col].copy()
-                    else:
-                        # Single column case
-                        if "Close" in ticker_data.columns:
-                            close_data = ticker_data[["Close"]].copy()
-                        elif "Adj Close" in ticker_data.columns:
-                            close_data = ticker_data[["Adj Close"]].copy()
-                        else:
-                            close_data = ticker_data.iloc[:, [0]].copy()
+    if not frames:
+        return pd.DataFrame()
 
-                    # Rename the column to match the original ticker (not the one with suffix)
-                    if len(close_data.columns) == 1:
-                        close_data.columns = [ticker]
-
-                    # Store the data
-                    for date, row in close_data.iterrows():
-                        if date not in all_prices:
-                            all_prices[date] = {}
-                        for col in row.index:
-                            all_prices[date][col] = row[col]
-
-                    successful_tickers.append(ticker)
-
-            except Exception as e:
-                # Log the error but continue with other tickers
-                print(f"Warning: Could not fetch data for ticker {ticker}: {e}")
-                # Try with .NS suffix if not already tried
-                if '.' not in ticker and ticker_to_use != f"{ticker}.NS":
-                    try:
-                        ticker_with_ns = f"{ticker}.NS"
-                        period = f"{int(lookback_days)}d"
-                        ticker_data = yf.download(
-                            tickers=[ticker_with_ns],
-                            period=period,
-                            interval=interval,
-                            auto_adjust=True,
-                            progress=False,
-                            threads=False,
-                            group_by="column",
-                        )
-
-                        if ticker_data is not None and not ticker_data.empty:
-                            # Extract closing prices
-                            if isinstance(ticker_data.columns, pd.MultiIndex):
-                                if "Close" in ticker_data.columns.get_level_values(0):
-                                    close_data = ticker_data["Close"].copy()
-                                elif "Adj Close" in ticker_data.columns.get_level_values(0):
-                                    close_data = ticker_data["Adj Close"].copy()
-                                else:
-                                    # fallback: use first available column
-                                    first_col = ticker_data.columns.get_level_values(0)[0]
-                                    close_data = ticker_data[first_col].copy()
-                            else:
-                                # Single column case
-                                if "Close" in ticker_data.columns:
-                                    close_data = ticker_data[["Close"]].copy()
-                                elif "Adj Close" in ticker_data.columns:
-                                    close_data = ticker_data[["Adj Close"]].copy()
-                                else:
-                                    close_data = ticker_data.iloc[:, [0]].copy()
-
-                            # Rename the column to match the original ticker
-                            if len(close_data.columns) == 1:
-                                close_data.columns = [ticker]
-
-                            # Store the data
-                            for date, row in close_data.iterrows():
-                                if date not in all_prices:
-                                    all_prices[date] = {}
-                                for col in row.index:
-                                    all_prices[date][col] = row[col]
-
-                            successful_tickers.append(ticker)
-                    except Exception as e2:
-                        print(f"Warning: Could not fetch data for ticker {ticker} with .NS suffix: {e2}")
-                        continue
-
-        if not all_prices:
-            return pd.DataFrame()
-
-        # Convert the dictionary to DataFrame
-        prices_df = pd.DataFrame(all_prices).T
-        prices_df = prices_df.sort_index()
-
-        # Ensure columns are in the same order as requested tickers
-        ordered_columns = [t for t in tickers if t in prices_df.columns]
-        prices_df = prices_df[ordered_columns]
-
-        return prices_df
+    final_df = pd.concat(frames, axis=1)
+    final_df = final_df.loc[:, ~final_df.columns.duplicated(keep="first")]
+    final_df = final_df.sort_index()
+    ordered = [t for t in tickers if t in final_df.columns]
+    return final_df[ordered] if ordered else pd.DataFrame()
 
 
 # -------------------------
@@ -539,6 +635,7 @@ def fetch_prices(
     lookback_days: int = 365,
     interval: Interval = "1d",
     cache_ttl_seconds: int = 60 * 60,
+    require_returns: bool = True,
 ) -> PriceFetchResult:
     tickers = [t.strip().upper() for t in tickers if t.strip()]
     if not tickers:
@@ -568,11 +665,18 @@ def fetch_prices(
             if not prices.empty and not rets.empty:
                 return PriceFetchResult(prices=prices, returns=rets, source="cache", cached=True)
 
-    # 2) Try yfinance for all tickers, but collect partial success
+    # 2) Try Yahoo chart first (faster/more stable in constrained environments)
     all_prices = pd.DataFrame()
     remaining_tickers = tickers.copy()
     yfin_error: Optional[str] = None
 
+    chart_prices = _fetch_yahoo_chart_prices(remaining_tickers, lookback_days, interval)
+    if not chart_prices.empty:
+        all_prices = pd.concat([all_prices, chart_prices], axis=1)
+        successfully_fetched = [t for t in remaining_tickers if t in chart_prices.columns]
+        remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
+
+    # 3) Try yfinance for remaining tickers, but collect partial success
     try:
         yfin_prices = _fetch_yfinance_prices(remaining_tickers, lookback_days, interval)
         if not yfin_prices.empty:
@@ -585,23 +689,24 @@ def fetch_prices(
         yfin_error = str(e)
         print(f"Warning: yfinance failed for all tickers: {e}")
 
-    # 3) Try Stooq for remaining tickers
+    # 4) Try Stooq for remaining tickers
     if remaining_tickers:
-        stooq_prices = _fetch_stooq_prices(remaining_tickers, lookback_days, interval)
-        if not stooq_prices.empty:
-            # Add stooq data for remaining tickers
-            all_prices = pd.concat([all_prices, stooq_prices], axis=1)
-            # Remove successfully fetched tickers from remaining
-            successfully_fetched = [t for t in remaining_tickers if t in stooq_prices.columns]
-            remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
+        try:
+            stooq_prices = _fetch_stooq_prices(remaining_tickers, lookback_days, interval)
+            if not stooq_prices.empty:
+                # Add stooq data for remaining tickers
+                all_prices = pd.concat([all_prices, stooq_prices], axis=1)
+                # Remove successfully fetched tickers from remaining
+                successfully_fetched = [t for t in remaining_tickers if t in stooq_prices.columns]
+                remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
+        except Exception as e:
+            print(f"Warning: stooq failed for remaining tickers: {e}")
 
-    # 4) Try mock prices for remaining Indian tickers
+    # 5) Try mock prices for remaining Indian tickers
     if remaining_tickers:
         mock_prices = _fetch_mock_indian_prices(remaining_tickers, lookback_days, interval)
         if not mock_prices.empty:
             # Add mock data for remaining tickers
-            # To avoid NaN issues when combining data with different date ranges,
-            # we'll align the date ranges by reindexing and forward-filling
             if not all_prices.empty:
                 # Combine the data by reindexing to include all dates
                 all_dates = all_prices.index.union(mock_prices.index).sort_values()
@@ -613,12 +718,34 @@ def fetch_prices(
             successfully_fetched = [t for t in remaining_tickers if t in mock_prices.columns]
             remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
 
+    # 6) Last-resort latest quote for UI paths that only need current price.
+    if remaining_tickers and not require_returns:
+        quote_prices = _fetch_yahoo_quote_prices(remaining_tickers)
+        if not quote_prices.empty:
+            all_prices = pd.concat([all_prices, quote_prices], axis=1)
+            successfully_fetched = [t for t in remaining_tickers if t in quote_prices.columns]
+            remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
+
+    # 7) Final fallback: Yahoo search-based quote parsing.
+    if remaining_tickers and not require_returns:
+        search_prices = _fetch_yahoo_search_prices(remaining_tickers)
+        if not search_prices.empty:
+            all_prices = pd.concat([all_prices, search_prices], axis=1)
+            successfully_fetched = [t for t in remaining_tickers if t in search_prices.columns]
+            remaining_tickers = [t for t in remaining_tickers if t not in successfully_fetched]
+
     # Determine the source based on what worked
     if not all_prices.empty:
         if remaining_tickers and len(remaining_tickers) < len(tickers):
             src = "mixed_sources"
         elif all_prices.equals(yfin_prices if 'yfin_prices' in locals() and not yfin_prices.empty else pd.DataFrame()):
             src = "yfinance"
+        elif all_prices.equals(chart_prices if 'chart_prices' in locals() and not chart_prices.empty else pd.DataFrame()):
+            src = "yahoo_chart"
+        elif all_prices.equals(quote_prices if 'quote_prices' in locals() and not quote_prices.empty else pd.DataFrame()):
+            src = "yahoo_quote"
+        elif all_prices.equals(search_prices if 'search_prices' in locals() and not search_prices.empty else pd.DataFrame()):
+            src = "yahoo_search"
         elif all_prices.equals(mock_prices if 'mock_prices' in locals() and not mock_prices.empty else pd.DataFrame()):
             src = "mock_indian"
         elif all_prices.equals(stooq_prices if 'stooq_prices' in locals() and not stooq_prices.empty else pd.DataFrame()):
@@ -634,9 +761,11 @@ def fetch_prices(
         msg = "No market data returned (empty download). Try again or change tickers/interval."
         if yfin_error:
             msg += f" (yfinance error: {yfin_error})"
+        # If we have stooq errors in the warnings list (which we track internally but didn't expose), 
+        # we should at least hint at them. But yfin_error is key.
         raise RuntimeError(msg)
 
-    # Check for missing tickers and try to provide more informative feedback
+    # Check for missing tickers
     missing = [t for t in tickers if t not in all_prices.columns]
     if missing:
         # Print warning for missing tickers
@@ -650,7 +779,7 @@ def fetch_prices(
         all_prices = all_prices[tickers].sort_index()
 
     rets = all_prices.pct_change().dropna(how="all")
-    if rets.empty:
+    if require_returns and rets.empty:
         raise RuntimeError("Returns are empty (not enough data). Increase lookback_days or change interval.")
 
     # Save cache
