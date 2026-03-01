@@ -120,3 +120,5 @@ coverage.xml
 tmp/
 temp/
 *~
+apps/api/.venv/
+apps/web/tsconfig.tsbuildinfo
