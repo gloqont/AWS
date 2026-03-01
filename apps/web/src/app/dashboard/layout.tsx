@@ -116,6 +116,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ? (COUNTRY_ACCOUNT_TYPES[savedProfile.taxCountry] || DEFAULT_ACCOUNT_TYPES)
     : {};
 
+  const getGuideHref = () => {
+    if (pathname?.includes("/dashboard/scenario-simulation")) {
+      return "/dashboard/scenario-simulation?tutorial=scenario";
+    }
+    if (pathname?.includes("/dashboard/tax-advisor")) {
+      return "/dashboard/tax-advisor?tutorial=tax-advisor";
+    }
+    if (pathname?.includes("/dashboard/tax-impact")) {
+      return "/dashboard/tax-impact?tutorial=tax-impact";
+    }
+    return "/dashboard/portfolio-optimizer?tutorial=portfolio";
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
@@ -197,7 +210,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={() => {
                   localStorage.removeItem("hasCompletedTutorial_v2");
                   sessionStorage.removeItem("tutorialShownThisSession");
-                  window.location.href = "/dashboard/portfolio-optimizer?tutorial=portfolio";
+                  window.location.href = getGuideHref();
                 }}
                 className={[
                   "flex w-full items-center rounded-xl border transition-colors",
@@ -316,7 +329,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           <div className="px-4 py-4 border-t border-white/10 text-xs text-white/50">
             <div className={collapsed ? "hidden" : "leading-relaxed"}>
-              v1 • admin-only
+              v2 • admin-only
               <br />
               Protected routes
             </div>

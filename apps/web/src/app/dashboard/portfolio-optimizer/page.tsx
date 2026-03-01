@@ -734,7 +734,7 @@ export default function PortfolioOptimizerPage() {
           {/* Show message if no paths yet */}
           {!mcPaths && !loading && (
             <div className="mt-4 p-4 rounded-xl border border-white/10 bg-black/20 text-center text-white/50 text-sm">
-              Click "Analyze Risk (Real Data)" above to generate future risk projections
+              Click &quot;Analyze Risk (Real Data)&quot; above to generate future risk projections
             </div>
           )}
 
