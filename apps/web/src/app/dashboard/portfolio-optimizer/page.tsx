@@ -19,8 +19,6 @@ function toNumber(s: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-const HORIZON_OPTIONS = [1, 3, 5, 10] as const;
-
 export default function PortfolioOptimizerPage() {
   const searchParams = useSearchParams();
   const [name, setName] = useState("My Portfolio");
@@ -154,8 +152,6 @@ export default function PortfolioOptimizerPage() {
 
   // Monte Carlo Paths State for Future Risk Visualization
   const [mcPaths, setMcPaths] = useState<any | null>(null);
-
-  const projectionHorizonYears = HORIZON_OPTIONS[projectionHorizonIndex] ?? 5;
 
   const sum = useMemo(() => {
     const tv = totalValue || 0;
@@ -699,32 +695,32 @@ export default function PortfolioOptimizerPage() {
 
 
           {err && (
-            <div className="mt-4 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-600">
+            <div className="mt-4 text-sm rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-200">
               {err}
             </div>
           )}
 
           {status && (
-            <div className="mt-4 text-sm rounded-xl border border-border bg-muted p-3">
+            <div className="mt-4 text-sm rounded-xl border border-white/10 bg-black/20 p-3">
               <div className="font-medium">{status.ok ? "Validation passed" : "Validation failed"}</div>
-              <div className="text-foreground/70 mt-1">Sum: {Number(status.sum_weights).toFixed(2)}%</div>
+              <div className="text-white/70 mt-1">Sum: {Number(status.sum_weights).toFixed(2)}%</div>
               {status.errors?.length ? (
-                <ul className="mt-2 list-disc pl-5 text-red-500">
+                <ul className="mt-2 list-disc pl-5 text-red-200">
                   {status.errors.map((x: string, idx: number) => (
                     <li key={idx}>{x}</li>
                   ))}
                 </ul>
               ) : null}
               {status.warnings?.length ? (
-                <ul className="mt-2 list-disc pl-5 text-amber-500">
+                <ul className="mt-2 list-disc pl-5 text-amber-200">
                   {status.warnings.map((x: string, idx: number) => (
                     <li key={idx}>{x}</li>
                   ))}
                 </ul>
               ) : null}
               {status.saved ? (
-                <div className="mt-2 text-foreground/70">
-                  Saved as <span className="text-foreground">{status.saved.id}</span>
+                <div className="mt-2 text-white/70">
+                  Saved as <span className="text-white">{status.saved.id}</span>
                 </div>
               ) : null}
             </div>
@@ -755,40 +751,22 @@ export default function PortfolioOptimizerPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="text-sm font-medium">Risk Contributions (Variance Share)</div>
-              <div className="text-xs text-white/60 mt-1">These should roughly sum to 1.0</div>
-              <div className="mt-3 space-y-2">
-                {analysis.risk_contributions.map((r: any) => (
-                  <div key={r.ticker} className="flex items-center justify-between text-sm">
-                    <div className="text-white/80">{r.ticker}</div>
-                    <div className="text-white/60">
-                      w={(r.weight * 100).toFixed(2)}% • rc={(r.variance_contribution * 100).toFixed(2)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <pre className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 overflow-auto text-xs text-white/80">
-{JSON.stringify(analysis.corr, null, 2)}
-            </pre>
           </div>
         )}
 
-        {/* Risk object */}
-        {riskObject && (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
-            <div className="text-lg font-semibold">Portfolio Risk Object</div>
+        {/* Future Risk Paths Visualization */}
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5">
+          <div>
+            <div className="text-lg font-semibold">Future Risk Paths</div>
             <div className="text-sm text-white/60">
-              Contract for future rolling correlations, regime detection, solvers, and re-optimization jobs.
+              Monte Carlo projections of your portfolio across different time horizons
             </div>
           </div>
 
           {/* Show message if no paths yet */}
           {!mcPaths && !loading && (
             <div className="mt-4 p-4 rounded-xl border border-white/10 bg-black/20 text-center text-white/50 text-sm">
-              Click "Analyze Risk (Real Data)" above to generate future risk projections
+              Click &quot;Analyze Risk (Real Data)&quot; above to generate future risk projections
             </div>
           )}
 
